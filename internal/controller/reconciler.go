@@ -135,9 +135,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	desired := map[string]struct{}{}
-	sources := in.Status.Monitoring.Sources
-	for _, ep := range sources.Metrics {
-		pm := podMonitorFor(b, in, sources, ep, params)
+	for _, pm := range podMonitorsFor(b, in, in.Status.Monitoring.Sources, params) {
 		desired[pm.GetName()] = struct{}{}
 		if err := r.Apply(ctx, client.ApplyConfigurationFromUnstructured(pm), client.FieldOwner(ControllerName), client.ForceOwnership); err != nil {
 			return ctrl.Result{}, r.cc.SetConfigured(ctx, b, monitoringv1alpha1.ReasonApplyFailed, fmt.Sprintf("apply PodMonitor %s: %v", pm.GetName(), err))
@@ -171,9 +169,36 @@ func notAcceptedReason(b *monitoringv1alpha1.MonitoringBinding) monitoringv1alph
 	return monitoringv1alpha1.ReasonNotAccepted
 }
 
-// podMonitorFor builds the PodMonitor for one endpoint, owned by the binding
-// and stamped with the identity labels through relabelings.
-func podMonitorFor(b *monitoringv1alpha1.MonitoringBinding, in *corev1alpha1.Instance, sources *corev1alpha1.MonitoringSources, ep corev1alpha1.MetricsEndpoint, params destinationParameters) *unstructured.Unstructured {
+// podMonitorsFor builds one PodMonitor per component, owned by the binding,
+// with one podMetricsEndpoints entry per metrics endpoint of that component.
+// A PodMonitor has a single pod selector, so endpoints of one component must
+// share theirs; a multi-target exporter publishes one endpoint per probed
+// pod behind the same selector.
+func podMonitorsFor(b *monitoringv1alpha1.MonitoringBinding, in *corev1alpha1.Instance, sources *corev1alpha1.MonitoringSources, params destinationParameters) []*unstructured.Unstructured {
+	var order []string
+	byComponent := map[string]*unstructured.Unstructured{}
+	for _, ep := range sources.Metrics {
+		pm, ok := byComponent[ep.Component]
+		if !ok {
+			pm = podMonitorFor(b, in, ep, params)
+			byComponent[ep.Component] = pm
+			order = append(order, ep.Component)
+		}
+		endpoints, _, _ := unstructured.NestedSlice(pm.Object, "spec", "podMetricsEndpoints")
+		endpoints = append(endpoints, podMetricsEndpointFor(sources, ep, params))
+		_ = unstructured.SetNestedSlice(pm.Object, endpoints, "spec", "podMetricsEndpoints")
+	}
+	out := make([]*unstructured.Unstructured, 0, len(order))
+	for _, component := range order {
+		out = append(out, byComponent[component])
+	}
+	return out
+}
+
+// podMetricsEndpointFor renders one scrape endpoint, stamped with the identity
+// labels through relabelings. A multi-target probe (params.target) relabels
+// the target into the instance label so each probed pod is its own series.
+func podMetricsEndpointFor(sources *corev1alpha1.MonitoringSources, ep corev1alpha1.MetricsEndpoint, params destinationParameters) map[string]any {
 	endpoint := map[string]any{
 		"path":   ep.Path,
 		"scheme": ep.Scheme,
@@ -235,8 +260,16 @@ func podMonitorFor(b *monitoringv1alpha1.MonitoringBinding, in *corev1alpha1.Ins
 	for _, k := range keys {
 		relabelings = append(relabelings, map[string]any{"targetLabel": k, "replacement": identity[k], "action": "replace"})
 	}
+	if _, ok := ep.Params["target"]; ok {
+		relabelings = append(relabelings, map[string]any{"sourceLabels": []any{"__param_target"}, "targetLabel": "instance", "action": "replace"})
+	}
 	endpoint["relabelings"] = relabelings
+	return endpoint
+}
 
+// podMonitorFor builds the PodMonitor shell for one component: selector,
+// labels and owner, with no endpoints yet.
+func podMonitorFor(b *monitoringv1alpha1.MonitoringBinding, in *corev1alpha1.Instance, ep corev1alpha1.MetricsEndpoint, params destinationParameters) *unstructured.Unstructured {
 	selector := map[string]any{}
 	for k, v := range ep.PodSelector {
 		selector[k] = v
@@ -269,7 +302,7 @@ func podMonitorFor(b *monitoringv1alpha1.MonitoringBinding, in *corev1alpha1.Ins
 		"spec": map[string]any{
 			"selector":            map[string]any{"matchLabels": selector},
 			"namespaceSelector":   map[string]any{"matchNames": []any{b.Namespace}},
-			"podMetricsEndpoints": []any{endpoint},
+			"podMetricsEndpoints": []any{},
 		},
 	}}
 	return u
