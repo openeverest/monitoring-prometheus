@@ -10,6 +10,8 @@ spec:
       type: mongod
     configServer:
       type: cfg
+    proxy:
+      type: mongos
   monitoring:
     destinations:
       - name: prometheus

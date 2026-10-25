@@ -1,9 +1,4 @@
-# PodMonitors are owned by the binding and go with it.
-apiVersion: monitoring.coreos.com/v1
-kind: PodMonitor
-metadata:
-  name: orders-prometheus-26264916-engine
----
+# A component the Instance stops publishing loses its PodMonitor.
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:

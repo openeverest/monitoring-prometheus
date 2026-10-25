@@ -18,7 +18,7 @@ status:
         - component: engine
           kind: mongodb
           podSelector:
-            app.kubernetes.io/instance: orders
+            core.openeverest.io/instance: orders
             app.kubernetes.io/component: mongod
           port: metrics
           auth:
@@ -27,10 +27,22 @@ status:
         - component: configServer
           kind: mongodb
           podSelector:
-            app.kubernetes.io/instance: orders
+            core.openeverest.io/instance: orders
             app.kubernetes.io/component: cfg
           port: 9216
           path: /scrape
           params:
             target:
               - orders-cfg-0.orders-cfg:27017
+        - component: proxy
+          kind: mongodb
+          podSelector:
+            core.openeverest.io/instance: orders
+            app.kubernetes.io/component: mongos
+          port: metrics
+          scheme: https
+          tls:
+            ca:
+              name: orders-ca
+              key: ca.crt
+            serverName: orders-mongos

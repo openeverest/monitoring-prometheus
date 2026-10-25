@@ -14,7 +14,7 @@ metadata:
 spec:
   selector:
     matchLabels:
-      app.kubernetes.io/instance: orders
+      core.openeverest.io/instance: orders
       app.kubernetes.io/component: mongod
   namespaceSelector:
     matchNames:
@@ -70,7 +70,7 @@ metadata:
 spec:
   selector:
     matchLabels:
-      app.kubernetes.io/instance: orders
+      core.openeverest.io/instance: orders
       app.kubernetes.io/component: cfg
   namespaceSelector:
     matchNames:
@@ -109,6 +109,32 @@ spec:
           targetLabel: instance
           action: replace
 ---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: orders-prometheus-26264916-proxy
+  ownerReferences:
+    - apiVersion: monitoring.openeverest.io/v1alpha1
+      kind: MonitoringBinding
+      name: orders-prometheus-26264916
+      controller: true
+spec:
+  selector:
+    matchLabels:
+      core.openeverest.io/instance: orders
+      app.kubernetes.io/component: mongos
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      scheme: https
+      tlsConfig:
+        ca:
+          secret:
+            name: orders-ca
+            key: ca.crt
+        serverName: orders-mongos
+      (basicAuth == null): true
+---
 apiVersion: monitoring.openeverest.io/v1alpha1
 kind: MonitoringBinding
 metadata:
@@ -117,5 +143,5 @@ status:
   (conditions[?type == 'Configured']):
     - status: "True"
       reason: Configured
-      message: PodMonitors orders-prometheus-26264916-configserver, orders-prometheus-26264916-engine
+      message: PodMonitors orders-prometheus-26264916-configserver, orders-prometheus-26264916-engine, orders-prometheus-26264916-proxy
       observedGeneration: 1

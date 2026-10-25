@@ -16,12 +16,13 @@ RELEASE_NAMESPACE ?= openeverest-system
 
 GOLANGCI_LINT_VERSION ?= v2.14.0
 
-# Branch of openeverest/openeverest whose CRDs the integration tests install.
-# Switch to main once the monitoring API is merged there.
-OPENEVEREST_BRANCH ?= monitoring/01-api
-OPENEVEREST_CRD_URL = https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases
+# CRDs of the openeverest core version pinned in go.mod, for the integration
+# tests.
+OPENEVEREST_MODULE = github.com/openeverest/openeverest/v2
+OPENEVEREST_CRDS = $$(go list -m -f '{{.Dir}}' $(OPENEVEREST_MODULE))/config/crd/bases
 # Prometheus Operator release whose PodMonitor CRD the integration tests install.
 PROMETHEUS_OPERATOR_VERSION ?= v0.94.2
+PODMONITOR_CRD = https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/$(PROMETHEUS_OPERATOR_VERSION)/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml
 
 # k3d cluster for the integration tests (dev/k3d_config.yaml).
 K3D_CLUSTER_NAME ?= monitoring-prometheus-test
@@ -95,21 +96,15 @@ load-image: ## Import the controller image (IMG) into the k3d cluster.
 
 .PHONY: install-crds
 install-crds: ## Install the OpenEverest and Prometheus Operator CRDs the controller needs.
-	kubectl apply --server-side -f $(OPENEVEREST_CRD_URL)/core.openeverest.io_providers.yaml
-	kubectl apply --server-side -f $(OPENEVEREST_CRD_URL)/core.openeverest.io_instances.yaml
-	kubectl apply --server-side -f $(OPENEVEREST_CRD_URL)/monitoring.openeverest.io_monitoringclasses.yaml
-	kubectl apply --server-side -f $(OPENEVEREST_CRD_URL)/monitoring.openeverest.io_monitoringdestinations.yaml
-	kubectl apply --server-side -f $(OPENEVEREST_CRD_URL)/monitoring.openeverest.io_monitoringbindings.yaml
-	kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/$(PROMETHEUS_OPERATOR_VERSION)/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml
-	kubectl wait --for=condition=Established --timeout=60s \
-		crd/providers.core.openeverest.io crd/instances.core.openeverest.io \
-		crd/monitoringclasses.monitoring.openeverest.io crd/monitoringdestinations.monitoring.openeverest.io \
-		crd/monitoringbindings.monitoring.openeverest.io crd/podmonitors.monitoring.coreos.com
+	go mod download $(OPENEVEREST_MODULE)
+	kubectl apply --server-side -f $(OPENEVEREST_CRDS) -f $(PODMONITOR_CRD)
+	kubectl wait --for=condition=Established --timeout=60s -f $(OPENEVEREST_CRDS) -f $(PODMONITOR_CRD)
 
 .PHONY: deploy-ci
 deploy-ci: ## Install the chart with the image imported into k3d (IMG).
+	kubectl create namespace $(RELEASE_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
+	kubectl label --overwrite namespace $(RELEASE_NAMESPACE) pod-security.kubernetes.io/enforce=restricted
 	helm upgrade --install monitoring-prometheus $(CHART_DIR) \
-		--create-namespace \
 		--namespace $(RELEASE_NAMESPACE) \
 		--set image.repository=$(_IMG_REPO) \
 		--set image.tag=$(_IMG_TAG) \

@@ -260,7 +260,7 @@ make test-integration
 make k3d-cluster-down
 ```
 
-`OPENEVEREST_BRANCH` selects the openeverest branch the CRDs come from.
+`make install-crds` installs the OpenEverest CRDs of the core version pinned in `go.mod`.
 
 ## Contributing
 

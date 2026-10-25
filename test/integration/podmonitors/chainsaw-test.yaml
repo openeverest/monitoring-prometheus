@@ -6,11 +6,12 @@ metadata:
 spec:
   description: |
     The controller claims the prometheus class and, for an Accepted
-    ExtensionManaged binding, renders one PodMonitor per component the
-    Instance publishes metrics for; deleting the binding garbage-collects
-    them. Only CRDs are installed: the test publishes the Instance's
-    monitoring sources the way provider-runtime does and accepts the binding
-    the way core does.
+    ExtensionManaged binding controlled by the Instance, renders one
+    PodMonitor per component the Instance publishes metrics for. A component
+    the Instance stops publishing loses its PodMonitor, and deleting the
+    binding garbage-collects the rest. Only CRDs are installed: the test
+    publishes the Instance's monitoring sources the way provider-runtime does
+    and creates and accepts the binding the way core does.
   catch:
     - script:
         content: kubectl -n $NAMESPACE get instance,secret,monitoringdestination,monitoringbinding,podmonitor -o yaml
@@ -43,15 +44,28 @@ spec:
 
     - name: binding-accepted
       try:
-        - apply:
-            file: 20-binding.yaml
         # Stand in for core's binding controller.
         - script:
             content: |
+              uid=$(kubectl -n $NAMESPACE get instance/orders -o jsonpath='{.metadata.uid}')
+              sed "s/__INSTANCE_UID__/$uid/" 20-binding.yaml | kubectl -n $NAMESPACE apply -f -
               kubectl -n $NAMESPACE patch monitoringbinding/orders-prometheus-26264916 --subresource status --type merge \
                 --patch '{"status":{"conditions":[{"type":"Accepted","status":"True","reason":"Accepted","message":"accepted by the test","observedGeneration":1,"lastTransitionTime":"2026-01-01T00:00:00Z"}]}}'
         - assert:
             file: 20-assert.yaml
+
+    - name: component-withdrawn
+      try:
+        - script:
+            content: |
+              kubectl -n $NAMESPACE patch instance/orders --subresource status --type json --patch '[
+                {"op": "test", "path": "/status/monitoring/sources/metrics/1/component", "value": "configServer"},
+                {"op": "remove", "path": "/status/monitoring/sources/metrics/1"}
+              ]'
+        - assert:
+            file: 30-assert.yaml
+        - error:
+            file: 30-errors.yaml
 
     - name: binding-removed
       try:
@@ -61,4 +75,4 @@ spec:
               kind: MonitoringBinding
               name: orders-prometheus-26264916
         - error:
-            file: 30-errors.yaml
+            file: 40-errors.yaml

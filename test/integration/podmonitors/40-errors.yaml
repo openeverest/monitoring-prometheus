@@ -1,0 +1,15 @@
+# PodMonitors are owned by the binding and go with it.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: orders-prometheus-26264916-engine
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: orders-prometheus-26264916-configserver
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: orders-prometheus-26264916-proxy

@@ -14,3 +14,6 @@ spec:
       cfg:
         kind: mongodb
         metrics: Exporter
+      mongos:
+        kind: mongodb
+        metrics: Exporter
