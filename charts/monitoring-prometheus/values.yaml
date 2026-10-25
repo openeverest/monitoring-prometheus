@@ -29,9 +29,14 @@ class:
 podAnnotations: {}
 podLabels: {}
 
+# Pod Security Standards "restricted"; 65532 is the nonroot user of the
+# distroless image.
 podSecurityContext:
   runAsNonRoot: true
-  fsGroup: 65534
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
 
 securityContext:
   allowPrivilegeEscalation: false
@@ -40,7 +45,10 @@ securityContext:
       - ALL
   readOnlyRootFilesystem: true
   runAsNonRoot: true
-  runAsUser: 65534
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
 
 resources:
   limits:

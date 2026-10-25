@@ -15,6 +15,7 @@ spec:
   destinationParametersSchema:
     openAPIV3Schema:
       type: object
+      additionalProperties: false
       properties:
         podMonitorLabels:
           type: object
