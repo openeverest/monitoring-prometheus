@@ -10,9 +10,13 @@ and the destinations' `Ready` condition. PodMonitors are owned by the binding, s
 removing the destination from the Instance garbage-collects them.
 
 ```sh
-kubectl apply -f deploy/class.yaml
-go run ./cmd/controller            # uses the current kubeconfig
+# Installs the controller and claims the `prometheus` MonitoringClass. Like a
+# provider, it is its own chart, so it can ship as a hub extension or as a
+# conditional subchart of the OpenEverest chart.
+helm install monitoring-prometheus charts/monitoring-prometheus -n openeverest-system
 ```
+
+For development against the current kubeconfig: `make build && IMG=... make docker-build`, or run the controller out of cluster with `kubectl apply -f <(helm template x charts/monitoring-prometheus -s templates/monitoringclass.yaml)` and `go run ./cmd/controller`.
 
 `MonitoringDestination.spec.parameters`:
 

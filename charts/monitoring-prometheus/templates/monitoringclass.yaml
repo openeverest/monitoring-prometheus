@@ -1,0 +1,31 @@
+{{- if .Values.class.create -}}
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringClass
+metadata:
+  name: {{ .Values.class.name }}
+  labels:
+    {{- include "monitoring-prometheus.labels" . | nindent 4 }}
+spec:
+  controllerName: openeverest.io/monitoring-prometheus
+  displayName: {{ .Values.class.displayName }}
+  description: Creates a PodMonitor per metrics endpoint of every bound Instance.
+  extensionManaged:
+    requires:
+      metrics: true
+  destinationParametersSchema:
+    openAPIV3Schema:
+      type: object
+      properties:
+        podMonitorLabels:
+          type: object
+          description: Labels put on the generated PodMonitors so the target Prometheus selects them.
+          additionalProperties:
+            type: string
+        interval:
+          type: string
+          description: Scrape interval (Prometheus duration, e.g. 30s).
+  instanceParametersSchema:
+    openAPIV3Schema:
+      type: object
+      properties: {}
+{{- end }}

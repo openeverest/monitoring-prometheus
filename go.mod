@@ -3,7 +3,7 @@ module github.com/openeverest/monitoring-prometheus
 go 1.27.1
 
 require (
-	github.com/openeverest/openeverest/v2 v2.0.0-dev.2.0.20261001103743-9f182e4e248b
+	github.com/openeverest/openeverest/v2 v2.0.0-dev.2.0.20261025100336-8c34497fbadf
 	k8s.io/apimachinery v0.37.1
 	k8s.io/client-go v0.37.1
 	sigs.k8s.io/controller-runtime v0.25.1
