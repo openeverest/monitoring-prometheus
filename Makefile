@@ -14,6 +14,8 @@ _IMG_TAG  = $(lastword $(subst :, ,$(IMG)))
 CHART_DIR ?= charts/monitoring-prometheus
 RELEASE_NAMESPACE ?= openeverest-system
 
+GOLANGCI_LINT_VERSION ?= v2.14.0
+
 # Branch of openeverest/openeverest whose CRDs the integration tests install.
 # Switch to main once the monitoring API is merged there.
 OPENEVEREST_BRANCH ?= monitoring/01-api
@@ -30,15 +32,24 @@ help: ## Display this help.
 
 ##@ Development
 
+.PHONY: lint
+lint: ## Run golangci-lint.
+	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) run ./...
+
+.PHONY: tidy-check
+tidy-check: ## Verify go.mod and go.sum are tidy.
+	go mod tidy
+	git diff --exit-code -- go.mod go.sum
+
 .PHONY: run
 run: ## Run the controller against the current kubeconfig.
 	go run ./cmd/controller
 
 ##@ Testing
 
-.PHONY: test
-test: ## Run unit tests.
-	go test ./...
+.PHONY: test-unit
+test-unit: ## Run unit tests.
+	go test -race -coverprofile=coverage.out ./...
 
 .PHONY: test-integration
 test-integration: ## Run the chainsaw integration tests against the current cluster.
@@ -48,11 +59,15 @@ test-integration: ## Run the chainsaw integration tests against the current clus
 
 .PHONY: build
 build: $(LOCALBIN) ## Build the controller binary.
-	CGO_ENABLED=0 GOOS=linux go build -o $(LOCALBIN)/controller ./cmd/controller
+	CGO_ENABLED=0 go build -o $(LOCALBIN)/controller ./cmd/controller
 
 .PHONY: docker-build
-docker-build: build ## Build the controller image.
+docker-build: ## Build the controller image.
 	$(CONTAINER_TOOL) build -t $(IMG) .
+
+.PHONY: docker-push
+docker-push: ## Push the controller image.
+	$(CONTAINER_TOOL) push $(IMG)
 
 ##@ Helm
 
