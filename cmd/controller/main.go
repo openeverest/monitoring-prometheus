@@ -41,7 +41,7 @@ func main() {
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "Metrics endpoint bind address ('0' disables it).")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "Health probe endpoint bind address.")
 	flag.BoolVar(&leaderElect, "leader-elect", false, "Enable leader election; the lease is named after the controller and the served class.")
-	flag.StringVar(&className, "monitoring-class", "prometheus", "Name of the MonitoringClass whose bindings this controller serves.")
+	flag.StringVar(&className, "class-name", "prometheus", "Name of the MonitoringClass whose bindings this controller serves.")
 	opts := zap.Options{Development: false}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()

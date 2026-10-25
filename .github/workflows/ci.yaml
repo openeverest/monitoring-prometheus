@@ -138,7 +138,7 @@ jobs:
       - name: Render Helm chart
         run: |
           make helm-template > /tmp/rendered.yaml
-          grep -q -- '--monitoring-class=prometheus' /tmp/rendered.yaml \
+          grep -q -- '--class-name=prometheus' /tmp/rendered.yaml \
             || { echo '::error::the controller is not told which class to serve'; exit 1; }
           grep -q 'controllerName: openeverest.io/monitoring-prometheus' /tmp/rendered.yaml \
             || { echo '::error::the MonitoringClass does not name the controller'; exit 1; }
