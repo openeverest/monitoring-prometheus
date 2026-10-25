@@ -60,8 +60,8 @@ flowchart LR
    loses its PodMonitor. Removing the Instance entry deletes the binding, and Kubernetes
    garbage-collects its PodMonitors.
 
-The controller writes only two things besides the PodMonitors: the binding's `Configured`
-condition and the destination's `Ready` condition. It never writes Instances.
+Besides the PodMonitors, the controller writes three conditions and nothing else: the class's
+`Accepted`, each binding's `Configured` and each destination's `Ready`.
 
 Every scrape endpoint carries, through `relabelings`, the identity labels
 `openeverest_instance`, `openeverest_namespace`, `openeverest_provider` and `k8s_cluster_id`
@@ -115,7 +115,7 @@ Instance entries are removed.
 | Chart value | Default | Purpose |
 |---|---|---|
 | `class.create` | `true` | Install the `MonitoringClass` |
-| `class.name` | `prometheus` | Name of the class; the controller renders only the bindings of this class |
+| `class.name` | `prometheus` | Name of the class; the controller claims and serves only this class |
 | `class.displayName` | `Prometheus (Prometheus Operator)` | Name shown in the UI |
 | `image.repository` | `ghcr.io/openeverest/monitoring-prometheus` | Controller image |
 | `image.tag` | chart `appVersion` | Controller image tag |
@@ -173,14 +173,19 @@ spec:
 | `interval` | Prometheus duration (`30s`, `1m`) | Scrape interval; empty uses the Prometheus default |
 
 Neither parameter is required, but without `podMonitorLabels` most Prometheus setups select
-none of the PodMonitors. The destination needs no credentials: Prometheus scrapes the pods
-directly.
+none of the PodMonitors. Any other parameter is rejected: OpenEverest reports the destination
+`Accepted=False` with reason `InvalidParameters`. The destination needs no credentials:
+Prometheus scrapes the pods directly.
 
 ```bash
 kubectl get mdest prometheus
 ```
 
 `Ready=True` means the parameters are valid; the message shows the labels the PodMonitors get.
+A label key reserved for OpenEverest (`core.openeverest.io/instance` or
+`monitoring.openeverest.io/*`), an invalid label key or value, or an `interval` that is not a
+Prometheus duration gives `Ready=False` with reason `InvalidParameters`, and the destination's
+bindings report `RenderFailed`.
 
 ### 3. Send an Instance's metrics there
 
@@ -216,10 +221,10 @@ kubectl get podmonitors -l core.openeverest.io/instance=orders
 | Reason | Meaning |
 |---|---|
 | `Pending` | OpenEverest has not accepted the binding yet |
-| `NotAccepted` | OpenEverest rejected the binding; the message carries its `Accepted` reason |
-| `Retained` | The binding was accepted before and is not any more; the PodMonitors are kept as they are |
+| `NotAccepted` | OpenEverest rejected the binding, which owns no PodMonitors; the message carries its `Accepted` reason |
+| `Retained` | The binding is not accepted but still owns PodMonitors, which are kept as they are |
 | `EndpointNotServing` | The Instance publishes no metrics endpoints yet (it is starting, or its exporters are being enabled) |
-| `RenderFailed` | The Instance or destination is missing, the destination parameters are invalid, or a published endpoint cannot be rendered (for example it references a credential profile the Instance does not publish) |
+| `RenderFailed` | The Instance or destination is missing, the destination parameters are invalid, or a published endpoint cannot be rendered (for example its pod selector does not select the Instance's pods by `core.openeverest.io/instance`, or it references a credential profile the Instance does not publish); PodMonitors already in place are kept |
 | `ApplyFailed` | Writing a PodMonitor failed, usually because the `PodMonitor` CRD is not installed; retried every 30 seconds |
 | `Configured` | The PodMonitors are in place |
 
