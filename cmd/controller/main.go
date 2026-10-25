@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Command monitoring-prometheus is the ExtensionManaged MonitoringClass controller for
-// Prometheus Operator: one PodMonitor per metrics endpoint of every bound
-// Instance.
+// Command monitoring-prometheus is the ExtensionManaged MonitoringClass
+// controller for Prometheus Operator: one PodMonitor per component of every
+// bound Instance.
 package main
 
 import (
@@ -36,11 +36,12 @@ import (
 )
 
 func main() {
-	var metricsAddr, probeAddr string
+	var metricsAddr, probeAddr, className string
 	var leaderElect bool
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "Metrics endpoint bind address ('0' disables it).")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "Health probe endpoint bind address.")
 	flag.BoolVar(&leaderElect, "leader-elect", false, "Enable leader election; the lease is named after the controller.")
+	flag.StringVar(&className, "monitoring-class", "prometheus", "Name of the MonitoringClass whose bindings this controller serves.")
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -70,7 +71,7 @@ func main() {
 		ctrl.Log.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}
-	if err := controller.Setup(mgr); err != nil {
+	if err := controller.Setup(mgr, className); err != nil {
 		ctrl.Log.Error(err, "unable to set up controller")
 		os.Exit(1)
 	}

@@ -8,7 +8,7 @@ metadata:
 spec:
   controllerName: openeverest.io/monitoring-prometheus
   displayName: {{ .Values.class.displayName }}
-  description: Creates a PodMonitor per metrics endpoint of every bound Instance.
+  description: Creates one Prometheus Operator PodMonitor per component of every Instance sending metrics to a destination of this class.
   extensionManaged:
     requires:
       metrics: true
@@ -18,14 +18,11 @@ spec:
       properties:
         podMonitorLabels:
           type: object
-          description: Labels put on the generated PodMonitors so the target Prometheus selects them.
+          description: Labels put on the generated PodMonitors so the target Prometheus selects them through its podMonitorSelector.
           additionalProperties:
             type: string
         interval:
           type: string
-          description: Scrape interval (Prometheus duration, e.g. 30s).
-  instanceParametersSchema:
-    openAPIV3Schema:
-      type: object
-      properties: {}
+          description: Scrape interval as a Prometheus duration (e.g. 30s). Empty uses the Prometheus default.
+          pattern: '^(0|(([0-9]+)y)?(([0-9]+)w)?(([0-9]+)d)?(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)s)?(([0-9]+)ms)?)$'
 {{- end }}

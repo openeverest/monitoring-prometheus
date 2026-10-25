@@ -5,26 +5,20 @@ metadata:
   name: {{ include "monitoring-prometheus.fullname" . }}
   labels:
     {{- include "monitoring-prometheus.labels" . | nindent 4 }}
-# A class controller reads the monitoring kinds, Instances and Providers and
-# writes only monitoring status (spec 014 §4.6). It never writes Instances.
+# A class controller reads the monitoring kinds and Instances and writes only
+# monitoring status. It never writes Instances or reads Secrets.
 rules:
   - apiGroups: [monitoring.openeverest.io]
     resources: [monitoringclasses, monitoringdestinations, monitoringbindings]
     verbs: [get, list, watch]
   - apiGroups: [monitoring.openeverest.io]
     resources: [monitoringclasses/status, monitoringdestinations/status, monitoringbindings/status]
-    verbs: [get, patch, update]
+    verbs: [patch]
   - apiGroups: [core.openeverest.io]
-    resources: [instances, providers]
+    resources: [instances]
     verbs: [get, list, watch]
-  # The objects this class controller renders for each binding.
+  # The objects rendered for each binding.
   - apiGroups: [monitoring.coreos.com]
     resources: [podmonitors]
-    verbs: [get, list, watch, create, update, patch, delete]
-  - apiGroups: [coordination.k8s.io]
-    resources: [leases]
-    verbs: [get, list, watch, create, update, patch, delete]
-  - apiGroups: [""]
-    resources: [events]
-    verbs: [create, patch]
+    verbs: [get, list, create, patch, delete]
 {{- end }}
