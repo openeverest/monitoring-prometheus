@@ -62,7 +62,7 @@ func Setup(mgr ctrl.Manager, className string) error {
 				return ok && class.Spec.ControllerName == ControllerName
 			}),
 		)).
-		Complete(&classReconciler{client: mgr.GetClient(), cc: cc}); err != nil {
+		Complete(&classReconciler{client: mgr.GetClient(), cc: cc, className: className}); err != nil {
 		return fmt.Errorf("set up MonitoringClass controller: %w", err)
 	}
 
@@ -93,16 +93,23 @@ func Setup(mgr ctrl.Manager, className string) error {
 	return nil
 }
 
-// classReconciler claims every MonitoringClass naming this controller.
+// classReconciler claims the served class. Another class naming this
+// controller is left unclaimed, since nothing here renders its bindings.
 type classReconciler struct {
-	client client.Client
-	cc     monitoring.ClassController
+	client    client.Client
+	cc        monitoring.ClassController
+	className string
 }
 
 func (r *classReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	class := &monitoringv1alpha1.MonitoringClass{}
 	if err := r.client.Get(ctx, req.NamespacedName, class); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+	if class.Name != r.className {
+		ctrl.LoggerFrom(ctx).Info("Leaving a MonitoringClass naming this controller unclaimed; this release serves another class",
+			"class", class.Name, "served", r.className)
+		return ctrl.Result{}, nil
 	}
 	return ctrl.Result{}, r.cc.ClaimClass(ctx, class)
 }
@@ -126,7 +133,7 @@ func (r *destinationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	params, err := decodeParameters(dst.Spec.Parameters)
 	if err != nil {
-		return ctrl.Result{}, r.cc.SetDestinationReady(ctx, dst, monitoringv1alpha1.ReadyReason(monitoringv1alpha1.ReasonInvalidParameters), err.Error(), "")
+		return ctrl.Result{}, r.cc.SetDestinationReady(ctx, dst, monitoringv1alpha1.ReasonReadyInvalidParameters, err.Error(), "")
 	}
 	return ctrl.Result{}, r.cc.SetDestinationReady(ctx, dst, monitoringv1alpha1.ReasonReady,
 		"PodMonitors are labelled "+labelsString(params.PodMonitorLabels), "")
@@ -166,7 +173,7 @@ func (r *bindingReconciler) bindingsForInstance(ctx context.Context, obj client.
 	}
 	var reqs []reconcile.Request
 	for i := range bindings {
-		if bindings[i].Labels[monitoringv1alpha1.BindingClassLabel] == r.className {
+		if r.executes(&bindings[i]) {
 			reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&bindings[i])})
 		}
 	}
@@ -182,9 +189,11 @@ func (r *bindingReconciler) bindingsForDestination(ctx context.Context, obj clie
 		ctrl.LoggerFrom(ctx).Error(err, "listing bindings for MonitoringDestination failed", "destination", obj.GetName())
 		return nil
 	}
-	reqs := make([]reconcile.Request, 0, len(list.Items))
+	var reqs []reconcile.Request
 	for i := range list.Items {
-		reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&list.Items[i])})
+		if r.executes(&list.Items[i]) {
+			reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&list.Items[i])})
+		}
 	}
 	return reqs
 }

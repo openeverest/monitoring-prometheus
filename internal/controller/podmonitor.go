@@ -19,10 +19,10 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"regexp"
 	"slices"
 	"strings"
 
+	"github.com/prometheus/common/model"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,9 +40,6 @@ const (
 	podMonitorAPIVersion = "monitoring.coreos.com/v1"
 	podMonitorKind       = "PodMonitor"
 )
-
-// durationPattern is the Prometheus Operator Duration format.
-var durationPattern = regexp.MustCompile(`^(0|(([0-9]+)y)?(([0-9]+)w)?(([0-9]+)d)?(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)s)?(([0-9]+)ms)?)$`)
 
 // destinationParameters is MonitoringDestination.spec.parameters for a
 // prometheus class.
@@ -63,6 +60,9 @@ func decodeParameters(raw *runtime.RawExtension) (destinationParameters, error) 
 		return p, fmt.Errorf("decode parameters: %w", err)
 	}
 	for _, k := range slices.Sorted(maps.Keys(p.PodMonitorLabels)) {
+		if k == monitoringv1alpha1.BindingInstanceLabel || strings.HasPrefix(k, monitoringv1alpha1.GroupVersion.Group+"/") {
+			return p, fmt.Errorf("podMonitorLabels: key %q is reserved for OpenEverest", k)
+		}
 		if errs := validation.IsQualifiedName(k); len(errs) > 0 {
 			return p, fmt.Errorf("podMonitorLabels: invalid key %q: %s", k, strings.Join(errs, "; "))
 		}
@@ -70,8 +70,10 @@ func decodeParameters(raw *runtime.RawExtension) (destinationParameters, error) 
 			return p, fmt.Errorf("podMonitorLabels: invalid value for %q: %s", k, strings.Join(errs, "; "))
 		}
 	}
-	if p.Interval != "" && !durationPattern.MatchString(p.Interval) {
-		return p, fmt.Errorf("interval %q is not a Prometheus duration such as 30s or 1m", p.Interval)
+	if p.Interval != "" {
+		if _, err := model.ParseDuration(p.Interval); err != nil {
+			return p, fmt.Errorf("interval %q is not a Prometheus duration such as 30s or 1m", p.Interval)
+		}
 	}
 	return p, nil
 }
@@ -145,11 +147,16 @@ func (pm *podMonitor) toUnstructured() (*unstructured.Unstructured, error) {
 // podMonitorsFor renders one PodMonitor per component of the Instance's
 // published metrics endpoints, in the order the components first appear.
 // A PodMonitor has a single pod selector, so all endpoints of a component
-// must select the same pods.
+// must select the same pods, and only pods of the bound Instance, since the
+// scrape carries that Instance's credentials.
 func podMonitorsFor(b *monitoringv1alpha1.MonitoringBinding, className string, sources *corev1alpha1.MonitoringSources, params destinationParameters) ([]*podMonitor, error) {
 	var out []*podMonitor
 	byComponent := map[string]*podMonitor{}
 	for _, ep := range sources.Metrics {
+		if ep.PodSelector[monitoringv1alpha1.BindingInstanceLabel] != b.Spec.InstanceRef.Name {
+			return nil, fmt.Errorf("component %q: pod selector does not select %s=%s",
+				ep.Component, monitoringv1alpha1.BindingInstanceLabel, b.Spec.InstanceRef.Name)
+		}
 		pm, ok := byComponent[ep.Component]
 		if !ok {
 			pm = podMonitorShell(b, className, ep, params)
@@ -193,16 +200,14 @@ func podMonitorShell(b *monitoringv1alpha1.MonitoringBinding, className string, 
 	}
 }
 
-// podMetricsEndpointFor renders one scrape endpoint. Identity labels are
-// stamped through relabelings; a multi-target probe (params.target) moves
-// the probed target into the instance label so each target is its own
-// series.
+// podMetricsEndpointFor renders one scrape endpoint.
 func podMetricsEndpointFor(sources *corev1alpha1.MonitoringSources, ep corev1alpha1.MetricsEndpoint, params destinationParameters) (podMetricsEndpoint, error) {
 	endpoint := podMetricsEndpoint{
-		Path:     ep.Path,
-		Scheme:   ep.Scheme,
-		Params:   ep.Params,
-		Interval: params.Interval,
+		Path:        ep.Path,
+		Scheme:      ep.Scheme,
+		Params:      ep.Params,
+		Interval:    params.Interval,
+		Relabelings: relabelingsFor(sources.Identity, ep),
 	}
 	if endpoint.Path == "" {
 		endpoint.Path = "/metrics"
@@ -237,18 +242,26 @@ func podMetricsEndpointFor(sources *corev1alpha1.MonitoringSources, ep corev1alp
 			Password: corev1.SecretKeySelector{LocalObjectReference: secret, Key: corev1alpha1.CredentialSecretKeyPassword},
 		}
 	}
+	return endpoint, nil
+}
 
-	identity := maps.Clone(sources.Identity.Labels)
-	if identity == nil {
-		identity = map[string]string{}
+// relabelingsFor stamps the contract's identity labels, and no other key:
+// an arbitrary target label such as __address__ would redirect the scrape.
+// A multi-target probe (params.target) moves the probed target into the
+// instance label so each target is its own series.
+func relabelingsFor(identity corev1alpha1.MonitoringIdentity, ep corev1alpha1.MetricsEndpoint) []relabelConfig {
+	labels := map[string]string{"openeverest_component": ep.Component, "openeverest_kind": ep.Kind}
+	for _, k := range []string{"openeverest_instance", "openeverest_namespace", "openeverest_provider", "k8s_cluster_id"} {
+		if v, ok := identity.Labels[k]; ok {
+			labels[k] = v
+		}
 	}
-	identity["openeverest_component"] = ep.Component
-	identity["openeverest_kind"] = ep.Kind
-	for _, k := range slices.Sorted(maps.Keys(identity)) {
-		endpoint.Relabelings = append(endpoint.Relabelings, relabelConfig{TargetLabel: k, Replacement: new(identity[k]), Action: "replace"})
+	out := make([]relabelConfig, 0, len(labels)+1)
+	for _, k := range slices.Sorted(maps.Keys(labels)) {
+		out = append(out, relabelConfig{TargetLabel: k, Replacement: new(labels[k]), Action: "replace"})
 	}
 	if _, ok := ep.Params["target"]; ok {
-		endpoint.Relabelings = append(endpoint.Relabelings, relabelConfig{SourceLabels: []string{"__param_target"}, TargetLabel: "instance", Action: "replace"})
+		out = append(out, relabelConfig{SourceLabels: []string{"__param_target"}, TargetLabel: "instance", Action: "replace"})
 	}
-	return endpoint, nil
+	return out
 }

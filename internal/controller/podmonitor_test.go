@@ -75,7 +75,7 @@ func identityRelabelings(component, kind string) []relabelConfig {
 }
 
 func engineSelector() map[string]string {
-	return map[string]string{"app.kubernetes.io/instance": "orders", "app.kubernetes.io/component": "pxc"}
+	return map[string]string{monitoringv1alpha1.BindingInstanceLabel: "orders", "app.kubernetes.io/component": "pxc"}
 }
 
 func TestPodMonitorsForRendersOnePerComponent(t *testing.T) {
@@ -84,7 +84,7 @@ func TestPodMonitorsForRendersOnePerComponent(t *testing.T) {
 		Identity: testIdentity(),
 		Metrics: []corev1alpha1.MetricsEndpoint{
 			{Component: "engine", Kind: "mysql", PodSelector: engineSelector(), Port: intstr.FromString("metrics")},
-			{Component: "configServer", Kind: "mongodb", PodSelector: map[string]string{"app": "cfg"}, Port: intstr.FromInt32(9216)},
+			{Component: "configServer", Kind: "mongodb", PodSelector: map[string]string{monitoringv1alpha1.BindingInstanceLabel: "orders", "app": "cfg"}, Port: intstr.FromInt32(9216)},
 			{Component: "engine", Kind: "mysql", PodSelector: engineSelector(), Port: intstr.FromString("probe"), Path: "/probe"},
 		},
 	}
@@ -236,6 +236,20 @@ func TestPodMetricsEndpointForMultiTargetProbe(t *testing.T) {
 	assert.Equal(t, map[string][]string{"target": {"redis://orders-0:6379"}}, got.Params)
 }
 
+func TestPodMetricsEndpointForStampsOnlyTheContractIdentity(t *testing.T) {
+	t.Parallel()
+	identity := testIdentity()
+	identity.Labels["__address__"] = "attacker.example.com:9104"
+	identity.Labels["__scheme__"] = "https"
+	identity.Labels["team"] = "dba"
+	sources := &corev1alpha1.MonitoringSources{Identity: identity}
+	ep := corev1alpha1.MetricsEndpoint{Component: "engine", Kind: "mysql", Port: intstr.FromString("metrics")}
+
+	got, err := podMetricsEndpointFor(sources, ep, destinationParameters{})
+	require.NoError(t, err)
+	assert.Equal(t, identityRelabelings("engine", "mysql"), got.Relabelings)
+}
+
 func TestPodMonitorsForRejectsUnrenderableSources(t *testing.T) {
 	t.Parallel()
 
@@ -261,9 +275,24 @@ func TestPodMonitorsForRejectsUnrenderableSources(t *testing.T) {
 			name: "endpoints of one component selecting different pods",
 			metrics: []corev1alpha1.MetricsEndpoint{
 				{Component: "engine", Kind: "mysql", PodSelector: engineSelector(), Port: intstr.FromString("metrics")},
-				{Component: "engine", Kind: "mysql", PodSelector: map[string]string{"app": "other"}, Port: intstr.FromString("metrics")},
+				{Component: "engine", Kind: "mysql", PodSelector: map[string]string{monitoringv1alpha1.BindingInstanceLabel: "orders", "app": "other"}, Port: intstr.FromString("metrics")},
 			},
 			wantErr: `metrics endpoints of component "engine" select different pods`,
+		},
+		{
+			name: "pod selector of another Instance",
+			metrics: []corev1alpha1.MetricsEndpoint{
+				{Component: "engine", Kind: "mysql", PodSelector: engineSelector(), Port: intstr.FromString("metrics")},
+				{Component: "proxy", Kind: "haproxy", PodSelector: map[string]string{monitoringv1alpha1.BindingInstanceLabel: "payments"}, Port: intstr.FromInt32(8404)},
+			},
+			wantErr: `component "proxy": pod selector does not select core.openeverest.io/instance=orders`,
+		},
+		{
+			name: "pod selector without the Instance label",
+			metrics: []corev1alpha1.MetricsEndpoint{
+				{Component: "engine", Kind: "mysql", PodSelector: map[string]string{"app.kubernetes.io/component": "pxc"}, Port: intstr.FromString("metrics")},
+			},
+			wantErr: `component "engine": pod selector does not select core.openeverest.io/instance=orders`,
 		},
 	}
 	for _, tt := range tests {
@@ -296,14 +325,19 @@ func TestDecodeParameters(t *testing.T) {
 			want: destinationParameters{PodMonitorLabels: map[string]string{"release": "kps", "team.example.com/owner": "dba"}, Interval: "1m30s"},
 		},
 		{
-			name: "unknown parameters are ignored",
-			raw:  &runtime.RawExtension{Raw: []byte(`{"scrapeTimeout":"10s"}`)},
-			want: destinationParameters{},
-		},
-		{
 			name:    "labels of the wrong type",
 			raw:     &runtime.RawExtension{Raw: []byte(`{"podMonitorLabels":"release=kps"}`)},
 			wantErr: "decode parameters",
+		},
+		{
+			name:    "label naming the Instance",
+			raw:     &runtime.RawExtension{Raw: []byte(`{"podMonitorLabels":{"core.openeverest.io/instance":"payments"}}`)},
+			wantErr: `podMonitorLabels: key "core.openeverest.io/instance" is reserved for OpenEverest`,
+		},
+		{
+			name:    "label in the monitoring API group",
+			raw:     &runtime.RawExtension{Raw: []byte(`{"podMonitorLabels":{"monitoring.openeverest.io/destination":"other"}}`)},
+			wantErr: `podMonitorLabels: key "monitoring.openeverest.io/destination" is reserved for OpenEverest`,
 		},
 		{
 			name:    "invalid label key",
@@ -319,6 +353,11 @@ func TestDecodeParameters(t *testing.T) {
 			name:    "interval that is not a duration",
 			raw:     &runtime.RawExtension{Raw: []byte(`{"interval":"30 seconds"}`)},
 			wantErr: `interval "30 seconds" is not a Prometheus duration`,
+		},
+		{
+			name:    "interval with units out of order",
+			raw:     &runtime.RawExtension{Raw: []byte(`{"interval":"30s1m"}`)},
+			wantErr: `interval "30s1m" is not a Prometheus duration`,
 		},
 	}
 	for _, tt := range tests {

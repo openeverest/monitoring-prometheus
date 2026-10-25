@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/managedfields"
 	"k8s.io/kube-openapi/pkg/validation/spec"
@@ -162,7 +163,8 @@ func engineEndpoint() corev1alpha1.MetricsEndpoint {
 
 func proxyEndpoint() corev1alpha1.MetricsEndpoint {
 	return corev1alpha1.MetricsEndpoint{
-		Component: "proxy", Kind: "haproxy", PodSelector: map[string]string{"app.kubernetes.io/component": "haproxy"}, Port: intstr.FromInt32(8404),
+		Component: "proxy", Kind: "haproxy", Port: intstr.FromInt32(8404),
+		PodSelector: map[string]string{monitoringv1alpha1.BindingInstanceLabel: "orders", "app.kubernetes.io/component": "haproxy"},
 	}
 }
 
@@ -174,9 +176,34 @@ func acceptedCondition(generation int64) metav1.Condition {
 }
 
 func acceptedBinding() *monitoringv1alpha1.MonitoringBinding {
+	return bindingWithConditions(acceptedCondition(1))
+}
+
+func bindingWithConditions(conditions ...metav1.Condition) *monitoringv1alpha1.MonitoringBinding {
 	b := testBinding()
-	b.Status.Conditions = []metav1.Condition{acceptedCondition(1)}
+	b.Status.Conditions = conditions
 	return b
+}
+
+func rejectedCondition() metav1.Condition {
+	return metav1.Condition{
+		Type: monitoringv1alpha1.MonitoringBindingConditionAccepted, Status: metav1.ConditionFalse, ObservedGeneration: 1,
+		Reason: monitoringv1alpha1.ReasonDestinationNotFound, Message: `MonitoringDestination "prom" not found`, LastTransitionTime: metav1.Now(),
+	}
+}
+
+// podMonitorOwnedBy is a PodMonitor controlled by the named binding.
+func podMonitorOwnedBy(name, binding string, uid types.UID) *unstructured.Unstructured {
+	pm := &unstructured.Unstructured{}
+	pm.SetAPIVersion("monitoring.coreos.com/v1")
+	pm.SetKind("PodMonitor")
+	pm.SetNamespace(testNamespace)
+	pm.SetName(name)
+	pm.SetLabels(map[string]string{monitoringv1alpha1.BindingInstanceLabel: "orders", monitoringv1alpha1.BindingClassLabel: "prometheus"})
+	pm.SetOwnerReferences([]metav1.OwnerReference{{
+		APIVersion: "monitoring.openeverest.io/v1alpha1", Kind: "MonitoringBinding", Name: binding, UID: uid, Controller: new(true),
+	}})
+	return pm
 }
 
 func reconcileBinding(t *testing.T, c client.Client) ctrl.Result {
@@ -255,15 +282,6 @@ func TestReconcileReportsWhyNothingIsConfigured(t *testing.T) {
 			return &meta.NoKindMatchError{GroupKind: schema.GroupKind{Group: "monitoring.coreos.com", Kind: "PodMonitor"}, SearchedVersions: []string{"v1"}}
 		},
 	}
-	withConditions := func(conditions ...metav1.Condition) *monitoringv1alpha1.MonitoringBinding {
-		b := testBinding()
-		b.Status.Conditions = conditions
-		return b
-	}
-	rejected := metav1.Condition{
-		Type: monitoringv1alpha1.MonitoringBindingConditionAccepted, Status: metav1.ConditionFalse, ObservedGeneration: 1,
-		Reason: monitoringv1alpha1.ReasonDestinationNotFound, Message: `MonitoringDestination "prom" not found`, LastTransitionTime: metav1.Now(),
-	}
 	wasConfigured := metav1.Condition{
 		Type: monitoringv1alpha1.MonitoringBindingConditionConfigured, Status: metav1.ConditionTrue, ObservedGeneration: 1,
 		Reason: string(monitoringv1alpha1.ReasonConfigured), LastTransitionTime: metav1.Now(),
@@ -298,13 +316,13 @@ func TestReconcileReportsWhyNothingIsConfigured(t *testing.T) {
 			wantMessage: `get MonitoringDestination "prom"`,
 		},
 		{
-			name:        "Instance publishes no endpoints yet",
+			name:        "Instance publishes no endpoints",
 			binding:     acceptedBinding(),
 			destination: testDestination(""),
 			instance:    testInstance(),
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  monitoringv1alpha1.ReasonEndpointNotServing,
-			wantMessage: "Instance orders publishes no metrics endpoints yet",
+			wantMessage: "Instance orders publishes no metrics endpoints",
 		},
 		{
 			name:        "endpoint naming an unpublished credential profile",
@@ -331,7 +349,7 @@ func TestReconcileReportsWhyNothingIsConfigured(t *testing.T) {
 		},
 		{
 			name:        "core has not decided yet",
-			binding:     withConditions(),
+			binding:     bindingWithConditions(),
 			destination: testDestination(""),
 			instance:    testInstance(engineEndpoint()),
 			wantStatus:  metav1.ConditionUnknown,
@@ -340,7 +358,7 @@ func TestReconcileReportsWhyNothingIsConfigured(t *testing.T) {
 		},
 		{
 			name:        "accepted for an older generation",
-			binding:     withConditions(acceptedCondition(0)),
+			binding:     bindingWithConditions(acceptedCondition(0)),
 			destination: testDestination(""),
 			instance:    testInstance(engineEndpoint()),
 			wantStatus:  metav1.ConditionUnknown,
@@ -349,19 +367,19 @@ func TestReconcileReportsWhyNothingIsConfigured(t *testing.T) {
 		},
 		{
 			name:        "rejected by core",
-			binding:     withConditions(rejected),
+			binding:     bindingWithConditions(rejectedCondition()),
 			instance:    testInstance(engineEndpoint()),
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  monitoringv1alpha1.ReasonNotAccepted,
 			wantMessage: `binding not accepted: DestinationNotFound: MonitoringDestination "prom" not found`,
 		},
 		{
-			name:        "rejected after PodMonitors were configured",
-			binding:     withConditions(rejected, wasConfigured),
+			name:        "rejected after an earlier configuration whose PodMonitors are gone",
+			binding:     bindingWithConditions(rejectedCondition(), wasConfigured),
 			instance:    testInstance(engineEndpoint()),
-			wantStatus:  metav1.ConditionUnknown,
-			wantReason:  monitoringv1alpha1.ReasonRetained,
-			wantMessage: `keeping the PodMonitors while the binding is not accepted (DestinationNotFound: MonitoringDestination "prom" not found)`,
+			wantStatus:  metav1.ConditionFalse,
+			wantReason:  monitoringv1alpha1.ReasonNotAccepted,
+			wantMessage: `binding not accepted: DestinationNotFound: MonitoringDestination "prom" not found`,
 		},
 	}
 	for _, tt := range tests {
@@ -390,25 +408,199 @@ func TestReconcileReportsWhyNothingIsConfigured(t *testing.T) {
 	}
 }
 
-func TestReconcileIgnoresBindingsItDoesNotServe(t *testing.T) {
+func TestReconcileKeepsLivePodMonitorsItCannotRender(t *testing.T) {
 	t.Parallel()
 
+	unpublished := testInstance()
+	unpublished.Status.Monitoring = nil
+	foreignPods := engineEndpoint()
+	foreignPods.PodSelector = map[string]string{monitoringv1alpha1.BindingInstanceLabel: "payments"}
+
 	tests := []struct {
-		name    string
-		classes []client.Object
+		name        string
+		binding     *monitoringv1alpha1.MonitoringBinding
+		destination *monitoringv1alpha1.MonitoringDestination
+		instance    *corev1alpha1.Instance
+		wantStatus  metav1.ConditionStatus
+		wantReason  monitoringv1alpha1.ConfiguredReason
+		wantMessage string
 	}{
 		{
-			name:    "class of another controller",
-			classes: []client.Object{testClass("openeverest.io/monitoring-victoriametrics")},
+			name:        "rejected by core",
+			binding:     bindingWithConditions(rejectedCondition()),
+			instance:    testInstance(engineEndpoint()),
+			wantStatus:  metav1.ConditionUnknown,
+			wantReason:  monitoringv1alpha1.ReasonRetained,
+			wantMessage: `keeping the PodMonitors while the binding is not accepted (DestinationNotFound: MonitoringDestination "prom" not found)`,
 		},
 		{
-			name: "class not installed",
+			name:        "core has not decided yet",
+			binding:     bindingWithConditions(),
+			destination: testDestination(""),
+			instance:    testInstance(engineEndpoint()),
+			wantStatus:  metav1.ConditionUnknown,
+			wantReason:  monitoringv1alpha1.ReasonRetained,
+			wantMessage: "keeping the PodMonitors while the binding is not accepted (not evaluated yet)",
+		},
+		{
+			name:        "destination gone",
+			binding:     acceptedBinding(),
+			instance:    testInstance(engineEndpoint()),
+			wantStatus:  metav1.ConditionFalse,
+			wantReason:  monitoringv1alpha1.ReasonRenderFailed,
+			wantMessage: `get MonitoringDestination "prom"`,
+		},
+		{
+			name:        "invalid destination parameters",
+			binding:     acceptedBinding(),
+			destination: testDestination(`{"interval":"often"}`),
+			instance:    testInstance(engineEndpoint()),
+			wantStatus:  metav1.ConditionFalse,
+			wantReason:  monitoringv1alpha1.ReasonRenderFailed,
+			wantMessage: `MonitoringDestination prom: interval "often" is not a Prometheus duration`,
+		},
+		{
+			name:        "endpoint selecting the pods of another Instance",
+			binding:     acceptedBinding(),
+			destination: testDestination(""),
+			instance:    testInstance(foreignPods),
+			wantStatus:  metav1.ConditionFalse,
+			wantReason:  monitoringv1alpha1.ReasonRenderFailed,
+			wantMessage: `component "engine": pod selector does not select core.openeverest.io/instance=orders`,
+		},
+		{
+			name:        "sources not published",
+			binding:     acceptedBinding(),
+			destination: testDestination(""),
+			instance:    unpublished,
+			wantStatus:  metav1.ConditionFalse,
+			wantReason:  monitoringv1alpha1.ReasonEndpointNotServing,
+			wantMessage: "Instance orders has not published monitoring sources yet",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			objs := append([]client.Object{testDestination(""), testInstance(engineEndpoint()), acceptedBinding()}, tt.classes...)
+			objs := []client.Object{
+				testClass(ControllerName), tt.binding, tt.instance,
+				podMonitorOwnedBy(testBindingName+"-engine", testBindingName, testBindingUID),
+			}
+			if tt.destination != nil {
+				objs = append(objs, tt.destination)
+			}
+			c := newFakeClient(t, nil, objs...)
+
+			res := reconcileBinding(t, c)
+
+			assert.Zero(t, res)
+			configured := bindingCondition(t, c, monitoringv1alpha1.MonitoringBindingConditionConfigured)
+			require.NotNil(t, configured)
+			assert.Equal(t, tt.wantStatus, configured.Status)
+			assert.Equal(t, string(tt.wantReason), configured.Reason)
+			assert.Contains(t, configured.Message, tt.wantMessage)
+			live := livePodMonitors(t, c)
+			assert.Len(t, live, 1)
+			assert.Contains(t, live, testBindingName+"-engine")
+		})
+	}
+}
+
+func TestReconcileWithoutThePodMonitorCRD(t *testing.T) {
+	t.Parallel()
+
+	noPodMonitorCRD := &interceptor.Funcs{
+		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+			if u, ok := list.(*unstructured.UnstructuredList); ok && u.GetKind() == "PodMonitorList" {
+				return &meta.NoKindMatchError{GroupKind: schema.GroupKind{Group: "monitoring.coreos.com", Kind: "PodMonitor"}, SearchedVersions: []string{"v1"}}
+			}
+			return c.List(ctx, list, opts...)
+		},
+	}
+	tests := []struct {
+		name        string
+		binding     *monitoringv1alpha1.MonitoringBinding
+		instance    *corev1alpha1.Instance
+		wantReason  monitoringv1alpha1.ConfiguredReason
+		wantMessage string
+	}{
+		{
+			name:        "rejected by core",
+			binding:     bindingWithConditions(rejectedCondition()),
+			instance:    testInstance(engineEndpoint()),
+			wantReason:  monitoringv1alpha1.ReasonNotAccepted,
+			wantMessage: `binding not accepted: DestinationNotFound: MonitoringDestination "prom" not found`,
+		},
+		{
+			name:        "Instance publishes no endpoints",
+			binding:     acceptedBinding(),
+			instance:    testInstance(),
+			wantReason:  monitoringv1alpha1.ReasonEndpointNotServing,
+			wantMessage: "Instance orders publishes no metrics endpoints",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := newFakeClient(t, noPodMonitorCRD, testClass(ControllerName), testDestination(""), tt.instance, tt.binding)
+
+			res := reconcileBinding(t, c)
+
+			assert.Zero(t, res)
+			configured := bindingCondition(t, c, monitoringv1alpha1.MonitoringBindingConditionConfigured)
+			require.NotNil(t, configured)
+			assert.Equal(t, string(tt.wantReason), configured.Reason)
+			assert.Equal(t, tt.wantMessage, configured.Message)
+		})
+	}
+}
+
+func TestReconcileIgnoresBindingsItDoesNotServe(t *testing.T) {
+	t.Parallel()
+
+	withMode := func(mode corev1alpha1.MonitoringExecutionMode) *monitoringv1alpha1.MonitoringBinding {
+		b := acceptedBinding()
+		b.Spec.ExecutionMode = mode
+		return b
+	}
+	secondClass := testClass(ControllerName)
+	secondClass.Name = "prometheus-b"
+	ofSecondClass := acceptedBinding()
+	ofSecondClass.Spec.ClassRef = &common.ObjectRef{Name: secondClass.Name}
+
+	tests := []struct {
+		name    string
+		binding *monitoringv1alpha1.MonitoringBinding
+		classes []client.Object
+	}{
+		{
+			name:    "class of another controller",
+			binding: acceptedBinding(),
+			classes: []client.Object{testClass("openeverest.io/monitoring-victoriametrics")},
+		},
+		{
+			name:    "class not installed",
+			binding: acceptedBinding(),
+		},
+		{
+			name:    "ProviderManaged binding of the class",
+			binding: withMode(corev1alpha1.MonitoringExecutionModeProviderManaged),
+			classes: []client.Object{testClass(ControllerName)},
+		},
+		{
+			name:    "binding whose mode core has not resolved",
+			binding: withMode(""),
+			classes: []client.Object{testClass(ControllerName)},
+		},
+		{
+			name:    "binding of a second class naming this controller",
+			binding: ofSecondClass,
+			classes: []client.Object{testClass(ControllerName), secondClass},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			objs := append([]client.Object{testDestination(""), testInstance(engineEndpoint()), tt.binding}, tt.classes...)
 			c := newFakeClient(t, nil, objs...)
 
 			res := reconcileBinding(t, c)
@@ -422,16 +614,7 @@ func TestReconcileIgnoresBindingsItDoesNotServe(t *testing.T) {
 
 func TestReconcilePrunesPodMonitorsOfComponentsNoLongerPublished(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
-	foreign := &unstructured.Unstructured{}
-	foreign.SetAPIVersion("monitoring.coreos.com/v1")
-	foreign.SetKind("PodMonitor")
-	foreign.SetNamespace(testNamespace)
-	foreign.SetName("orders-prometheus-0000000-proxy")
-	foreign.SetLabels(map[string]string{monitoringv1alpha1.BindingInstanceLabel: "orders", monitoringv1alpha1.BindingClassLabel: "prometheus"})
-	foreign.SetOwnerReferences([]metav1.OwnerReference{{
-		APIVersion: "monitoring.openeverest.io/v1alpha1", Kind: "MonitoringBinding", Name: "orders-prometheus-0000000", UID: "other", Controller: new(true),
-	}})
+	foreign := podMonitorOwnedBy("orders-prometheus-0000000-proxy", "orders-prometheus-0000000", "other")
 	c := newFakeClient(t, nil,
 		testClass(ControllerName),
 		testDestination(""),
@@ -442,17 +625,30 @@ func TestReconcilePrunesPodMonitorsOfComponentsNoLongerPublished(t *testing.T) {
 	reconcileBinding(t, c)
 	require.Len(t, livePodMonitors(t, c), 3)
 
-	in := &corev1alpha1.Instance{}
-	require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: "orders"}, in))
-	in.Status.Monitoring.Sources.Metrics = []corev1alpha1.MetricsEndpoint{engineEndpoint()}
-	require.NoError(t, c.Status().Update(ctx, in))
-	reconcileBinding(t, c)
+	publish := func(metrics ...corev1alpha1.MetricsEndpoint) {
+		in := &corev1alpha1.Instance{}
+		require.NoError(t, c.Get(t.Context(), client.ObjectKey{Namespace: testNamespace, Name: "orders"}, in))
+		in.Status.Monitoring.Sources.Metrics = metrics
+		require.NoError(t, c.Status().Update(t.Context(), in))
+	}
 
+	publish(engineEndpoint())
+	reconcileBinding(t, c)
 	live := livePodMonitors(t, c)
 	assert.Len(t, live, 2)
 	assert.Contains(t, live, testBindingName+"-engine")
-	assert.Contains(t, live, "orders-prometheus-0000000-proxy", "PodMonitors of other bindings are left alone")
+	assert.Contains(t, live, foreign.GetName(), "PodMonitors of other bindings are left alone")
 	configured := bindingCondition(t, c, monitoringv1alpha1.MonitoringBindingConditionConfigured)
 	require.NotNil(t, configured)
 	assert.Equal(t, "PodMonitors "+testBindingName+"-engine", configured.Message)
+
+	publish()
+	reconcileBinding(t, c)
+	live = livePodMonitors(t, c)
+	assert.Len(t, live, 1)
+	assert.Contains(t, live, foreign.GetName())
+	configured = bindingCondition(t, c, monitoringv1alpha1.MonitoringBindingConditionConfigured)
+	require.NotNil(t, configured)
+	assert.Equal(t, string(monitoringv1alpha1.ReasonEndpointNotServing), configured.Reason)
+	assert.Equal(t, "Instance orders publishes no metrics endpoints", configured.Message)
 }
