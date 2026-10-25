@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -63,7 +62,7 @@ func Setup(mgr ctrl.Manager, className string) error {
 				return ok && class.Spec.ControllerName == ControllerName
 			}),
 		)).
-		Complete(&classReconciler{cc: cc}); err != nil {
+		Complete(&classReconciler{client: mgr.GetClient(), cc: cc}); err != nil {
 		return fmt.Errorf("set up MonitoringClass controller: %w", err)
 	}
 
@@ -96,12 +95,16 @@ func Setup(mgr ctrl.Manager, className string) error {
 
 // classReconciler claims every MonitoringClass naming this controller.
 type classReconciler struct {
-	cc monitoring.ClassController
+	client client.Client
+	cc     monitoring.ClassController
 }
 
-func (r *classReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result, error) {
-	_, err := r.cc.Claim(ctx)
-	return ctrl.Result{}, err
+func (r *classReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	class := &monitoringv1alpha1.MonitoringClass{}
+	if err := r.client.Get(ctx, req.NamespacedName, class); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+	return ctrl.Result{}, r.cc.ClaimClass(ctx, class)
 }
 
 // destinationReconciler reports Ready on destinations of our class. There is
@@ -123,9 +126,9 @@ func (r *destinationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	params, err := decodeParameters(dst.Spec.Parameters)
 	if err != nil {
-		return ctrl.Result{}, r.cc.SetDestinationReady(ctx, dst, metav1.ConditionFalse, monitoringv1alpha1.ReasonInvalidParameters, err.Error(), "")
+		return ctrl.Result{}, r.cc.SetDestinationReady(ctx, dst, monitoringv1alpha1.ReadyReason(monitoringv1alpha1.ReasonInvalidParameters), err.Error(), "")
 	}
-	return ctrl.Result{}, r.cc.SetDestinationReady(ctx, dst, metav1.ConditionTrue, monitoringv1alpha1.ReasonReady,
+	return ctrl.Result{}, r.cc.SetDestinationReady(ctx, dst, monitoringv1alpha1.ReasonReady,
 		"PodMonitors are labelled "+labelsString(params.PodMonitorLabels), "")
 }
 
@@ -152,9 +155,13 @@ func sourcesOf(in *corev1alpha1.Instance) *corev1alpha1.MonitoringSources {
 }
 
 func (r *bindingReconciler) bindingsForInstance(ctx context.Context, obj client.Object) []reconcile.Request {
-	bindings, err := monitoring.ListBindingsForInstance(ctx, r.client, obj.GetNamespace(), obj.GetName())
+	in, ok := obj.(*corev1alpha1.Instance)
+	if !ok {
+		return nil
+	}
+	bindings, err := monitoring.ListBindingsForInstance(ctx, r.client, in)
 	if err != nil {
-		ctrl.LoggerFrom(ctx).Error(err, "listing bindings for Instance failed", "instance", obj.GetName())
+		ctrl.LoggerFrom(ctx).Error(err, "listing bindings for Instance failed", "instance", in.Name)
 		return nil
 	}
 	var reqs []reconcile.Request

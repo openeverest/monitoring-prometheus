@@ -4,14 +4,13 @@ metadata:
   name: orders-prometheus-26264916-engine
   labels:
     release: kube-prometheus-stack
-    openeverest.io/instance: orders
+    core.openeverest.io/instance: orders
     monitoring.openeverest.io/class: prometheus
   ownerReferences:
     - apiVersion: monitoring.openeverest.io/v1alpha1
       kind: MonitoringBinding
       name: orders-prometheus-26264916
       controller: true
-      blockOwnerDeletion: true
 spec:
   selector:
     matchLabels:
@@ -61,14 +60,13 @@ metadata:
   name: orders-prometheus-26264916-configserver
   labels:
     release: kube-prometheus-stack
-    openeverest.io/instance: orders
+    core.openeverest.io/instance: orders
     monitoring.openeverest.io/class: prometheus
   ownerReferences:
     - apiVersion: monitoring.openeverest.io/v1alpha1
       kind: MonitoringBinding
       name: orders-prometheus-26264916
       controller: true
-      blockOwnerDeletion: true
 spec:
   selector:
     matchLabels:

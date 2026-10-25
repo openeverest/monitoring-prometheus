@@ -4,7 +4,7 @@ kind: MonitoringBinding
 metadata:
   name: orders-prometheus-26264916
   labels:
-    openeverest.io/instance: orders
+    core.openeverest.io/instance: orders
     monitoring.openeverest.io/entry: prometheus
     monitoring.openeverest.io/destination: prom
     monitoring.openeverest.io/class: prometheus

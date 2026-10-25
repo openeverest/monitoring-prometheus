@@ -108,12 +108,11 @@ func TestPodMonitorsForRendersOnePerComponent(t *testing.T) {
 		monitoringv1alpha1.BindingClassLabel:    "prometheus",
 	}, engine.Labels)
 	assert.Equal(t, []metav1.OwnerReference{{
-		APIVersion:         "monitoring.openeverest.io/v1alpha1",
-		Kind:               "MonitoringBinding",
-		Name:               testBindingName,
-		UID:                testBindingUID,
-		Controller:         new(true),
-		BlockOwnerDeletion: new(true),
+		APIVersion: "monitoring.openeverest.io/v1alpha1",
+		Kind:       "MonitoringBinding",
+		Name:       testBindingName,
+		UID:        testBindingUID,
+		Controller: new(true),
 	}}, engine.OwnerReferences)
 	assert.Equal(t, metav1.LabelSelector{MatchLabels: engineSelector()}, engine.Spec.Selector)
 	assert.Equal(t, namespaceSelector{MatchNames: []string{testNamespace}}, engine.Spec.NamespaceSelector)

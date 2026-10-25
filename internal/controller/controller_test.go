@@ -30,6 +30,52 @@ import (
 	"github.com/openeverest/openeverest/v2/provider-runtime/monitoring"
 )
 
+func TestClassReconcilerClaimsOurClass(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		classController string
+		want            *metav1.Condition
+	}{
+		{
+			name:            "class naming this controller",
+			classController: ControllerName,
+			want: &metav1.Condition{
+				Status: metav1.ConditionTrue, Reason: monitoringv1alpha1.ReasonAccepted, Message: "claimed by " + ControllerName, ObservedGeneration: 1,
+			},
+		},
+		{
+			name:            "class of another controller",
+			classController: "openeverest.io/monitoring-victoriametrics",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			c := newFakeClient(t, nil, testClass(tt.classController))
+			r := &classReconciler{client: c, cc: monitoring.ClassController{Client: c, ControllerName: ControllerName}}
+
+			_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKey{Name: "prometheus"}})
+			require.NoError(t, err)
+
+			class := &monitoringv1alpha1.MonitoringClass{}
+			require.NoError(t, c.Get(ctx, client.ObjectKey{Name: "prometheus"}, class))
+			got := meta.FindStatusCondition(class.Status.Conditions, monitoringv1alpha1.MonitoringClassConditionAccepted)
+			if tt.want == nil {
+				assert.Nil(t, got)
+				return
+			}
+			require.NotNil(t, got)
+			assert.Equal(t, tt.want.Status, got.Status)
+			assert.Equal(t, tt.want.Reason, got.Reason)
+			assert.Equal(t, tt.want.Message, got.Message)
+			assert.Equal(t, tt.want.ObservedGeneration, got.ObservedGeneration)
+		})
+	}
+}
+
 func TestDestinationReconcilerReportsReady(t *testing.T) {
 	t.Parallel()
 
@@ -43,12 +89,12 @@ func TestDestinationReconcilerReportsReady(t *testing.T) {
 			name:            "labels to be selected by",
 			classController: ControllerName,
 			parameters:      `{"podMonitorLabels":{"release":"kps","team":"dba"}}`,
-			want:            &metav1.Condition{Status: metav1.ConditionTrue, Reason: monitoringv1alpha1.ReasonReady, Message: "PodMonitors are labelled release=kps,team=dba"},
+			want:            &metav1.Condition{Status: metav1.ConditionTrue, Reason: string(monitoringv1alpha1.ReasonReady), Message: "PodMonitors are labelled release=kps,team=dba"},
 		},
 		{
 			name:            "no parameters",
 			classController: ControllerName,
-			want:            &metav1.Condition{Status: metav1.ConditionTrue, Reason: monitoringv1alpha1.ReasonReady, Message: "PodMonitors are labelled {}"},
+			want:            &metav1.Condition{Status: metav1.ConditionTrue, Reason: string(monitoringv1alpha1.ReasonReady), Message: "PodMonitors are labelled {}"},
 		},
 		{
 			name:            "parameters that cannot be rendered",

@@ -233,8 +233,8 @@ func podMetricsEndpointFor(sources *corev1alpha1.MonitoringSources, ep corev1alp
 		}
 		secret := corev1.LocalObjectReference{Name: sources.Credentials[i].SecretRef.Name}
 		endpoint.BasicAuth = &basicAuth{
-			Username: corev1.SecretKeySelector{LocalObjectReference: secret, Key: "username"},
-			Password: corev1.SecretKeySelector{LocalObjectReference: secret, Key: "password"},
+			Username: corev1.SecretKeySelector{LocalObjectReference: secret, Key: corev1alpha1.CredentialSecretKeyUsername},
+			Password: corev1.SecretKeySelector{LocalObjectReference: secret, Key: corev1alpha1.CredentialSecretKeyPassword},
 		}
 	}
 

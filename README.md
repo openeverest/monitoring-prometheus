@@ -201,8 +201,8 @@ spec:
 Then follow the binding and the PodMonitors it produces:
 
 ```bash
-kubectl get mbind -l openeverest.io/instance=orders
-kubectl get podmonitors -l openeverest.io/instance=orders
+kubectl get mbind -l core.openeverest.io/instance=orders
+kubectl get podmonitors -l core.openeverest.io/instance=orders
 ```
 
 `Configured=True` lists the PodMonitors in its message. The metrics carry
