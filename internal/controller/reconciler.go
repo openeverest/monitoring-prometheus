@@ -287,7 +287,7 @@ func podMonitorFor(b *monitoringv1alpha1.MonitoringBinding, in *corev1alpha1.Ins
 		"apiVersion": podMonitorGVK.GroupVersion().String(),
 		"kind":       podMonitorGVK.Kind,
 		"metadata": map[string]any{
-			"name":      b.Name + "-" + ep.Component,
+			"name":      b.Name + "-" + strings.ToLower(ep.Component), // component names are not DNS labels
 			"namespace": b.Namespace,
 			"labels":    labels,
 			"ownerReferences": []any{map[string]any{
