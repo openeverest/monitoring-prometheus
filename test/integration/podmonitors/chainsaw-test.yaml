@@ -1,0 +1,64 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: podmonitors
+spec:
+  description: |
+    The controller claims the prometheus class and, for an Accepted
+    ExtensionManaged binding, renders one PodMonitor per component the
+    Instance publishes metrics for; deleting the binding garbage-collects
+    them. Only CRDs are installed: the test publishes the Instance's
+    monitoring sources the way provider-runtime does and accepts the binding
+    the way core does.
+  catch:
+    - script:
+        content: kubectl -n $NAMESPACE get instance,secret,monitoringdestination,monitoringbinding,podmonitor -o yaml
+    - script:
+        content: kubectl get monitoringclass,provider -o yaml
+    - podLogs:
+        namespace: openeverest-system
+        selector: app.kubernetes.io/name=monitoring-prometheus
+        tail: 100
+  steps:
+    - name: class-claimed
+      try:
+        - assert:
+            file: 00-assert.yaml
+
+    - name: instance-publishes-sources
+      try:
+        - apply:
+            file: 10-provider.yaml
+        - apply:
+            file: 10-instance.yaml
+        - script:
+            content: |
+              kubectl -n $NAMESPACE patch instance/orders --subresource status --type merge \
+                --patch "$(sed "s/__NAMESPACE__/$NAMESPACE/" 10-instance-status.yaml)"
+        - apply:
+            file: 10-destination.yaml
+        - assert:
+            file: 10-assert.yaml
+
+    - name: binding-accepted
+      try:
+        - apply:
+            file: 20-binding.yaml
+        # Stand in for core's binding controller.
+        - script:
+            content: |
+              kubectl -n $NAMESPACE patch monitoringbinding/orders-prometheus-26264916 --subresource status --type merge \
+                --patch '{"status":{"conditions":[{"type":"Accepted","status":"True","reason":"Accepted","message":"accepted by the test","observedGeneration":1,"lastTransitionTime":"2026-01-01T00:00:00Z"}]}}'
+        - assert:
+            file: 20-assert.yaml
+
+    - name: binding-removed
+      try:
+        - delete:
+            ref:
+              apiVersion: monitoring.openeverest.io/v1alpha1
+              kind: MonitoringBinding
+              name: orders-prometheus-26264916
+        - error:
+            file: 30-errors.yaml

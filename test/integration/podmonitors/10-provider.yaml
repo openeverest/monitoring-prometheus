@@ -1,0 +1,16 @@
+# The monitoring contract a provider declares. The controller reads only the
+# sources the Instance publishes; the Provider is here for completeness.
+apiVersion: core.openeverest.io/v1alpha1
+kind: Provider
+metadata:
+  name: monitoring-prometheus-it
+spec:
+  monitoring:
+    componentTypes:
+      mongod:
+        kind: mongodb
+        metrics: Exporter
+        credentialProfiles: [metrics]
+      cfg:
+        kind: mongodb
+        metrics: Exporter

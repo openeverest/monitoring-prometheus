@@ -1,0 +1,19 @@
+# The binding core materialises for the Instance's "prometheus" entry.
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringBinding
+metadata:
+  name: orders-prometheus-26264916
+  labels:
+    openeverest.io/instance: orders
+    monitoring.openeverest.io/entry: prometheus
+    monitoring.openeverest.io/destination: prom
+    monitoring.openeverest.io/class: prometheus
+spec:
+  instanceRef:
+    name: orders
+  destinationRef:
+    kind: MonitoringDestination
+    name: prom
+  classRef:
+    name: prometheus
+  executionMode: ExtensionManaged

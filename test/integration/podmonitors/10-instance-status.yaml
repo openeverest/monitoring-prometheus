@@ -1,0 +1,36 @@
+# Merge patch of Instance.status as provider-runtime publishes it.
+# __NAMESPACE__ is replaced with the test namespace.
+status:
+  monitoring:
+    sources:
+      identity:
+        clusterId: it-cluster
+        labels:
+          openeverest_instance: orders
+          openeverest_namespace: __NAMESPACE__
+          openeverest_provider: monitoring-prometheus-it
+          k8s_cluster_id: it-cluster
+      credentials:
+        - profile: metrics
+          secretRef:
+            name: orders-monitoring-metrics
+      metrics:
+        - component: engine
+          kind: mongodb
+          podSelector:
+            app.kubernetes.io/instance: orders
+            app.kubernetes.io/component: mongod
+          port: metrics
+          auth:
+            credentialProfile: metrics
+        # A multi-target exporter: one pod probes the target in params.
+        - component: configServer
+          kind: mongodb
+          podSelector:
+            app.kubernetes.io/instance: orders
+            app.kubernetes.io/component: cfg
+          port: 9216
+          path: /scrape
+          params:
+            target:
+              - orders-cfg-0.orders-cfg:27017

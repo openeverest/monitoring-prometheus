@@ -1,0 +1,123 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: orders-prometheus-26264916-engine
+  labels:
+    release: kube-prometheus-stack
+    openeverest.io/instance: orders
+    monitoring.openeverest.io/class: prometheus
+  ownerReferences:
+    - apiVersion: monitoring.openeverest.io/v1alpha1
+      kind: MonitoringBinding
+      name: orders-prometheus-26264916
+      controller: true
+      blockOwnerDeletion: true
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: orders
+      app.kubernetes.io/component: mongod
+  namespaceSelector:
+    matchNames:
+      - ($namespace)
+  podMetricsEndpoints:
+    - port: metrics
+      (portNumber == null): true
+      path: /metrics
+      scheme: http
+      interval: 30s
+      (params == null): true
+      basicAuth:
+        username:
+          name: orders-monitoring-metrics
+          key: username
+        password:
+          name: orders-monitoring-metrics
+          key: password
+      relabelings:
+        - targetLabel: k8s_cluster_id
+          replacement: it-cluster
+          action: replace
+        - targetLabel: openeverest_component
+          replacement: engine
+          action: replace
+        - targetLabel: openeverest_instance
+          replacement: orders
+          action: replace
+        - targetLabel: openeverest_kind
+          replacement: mongodb
+          action: replace
+        - targetLabel: openeverest_namespace
+          replacement: ($namespace)
+          action: replace
+        - targetLabel: openeverest_provider
+          replacement: monitoring-prometheus-it
+          action: replace
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  # Object names use the lower-cased component.
+  name: orders-prometheus-26264916-configserver
+  labels:
+    release: kube-prometheus-stack
+    openeverest.io/instance: orders
+    monitoring.openeverest.io/class: prometheus
+  ownerReferences:
+    - apiVersion: monitoring.openeverest.io/v1alpha1
+      kind: MonitoringBinding
+      name: orders-prometheus-26264916
+      controller: true
+      blockOwnerDeletion: true
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: orders
+      app.kubernetes.io/component: cfg
+  namespaceSelector:
+    matchNames:
+      - ($namespace)
+  podMetricsEndpoints:
+    - portNumber: 9216
+      (port == null): true
+      path: /scrape
+      scheme: http
+      interval: 30s
+      params:
+        target:
+          - orders-cfg-0.orders-cfg:27017
+      (basicAuth == null): true
+      relabelings:
+        - targetLabel: k8s_cluster_id
+          replacement: it-cluster
+          action: replace
+        - targetLabel: openeverest_component
+          replacement: configServer
+          action: replace
+        - targetLabel: openeverest_instance
+          replacement: orders
+          action: replace
+        - targetLabel: openeverest_kind
+          replacement: mongodb
+          action: replace
+        - targetLabel: openeverest_namespace
+          replacement: ($namespace)
+          action: replace
+        - targetLabel: openeverest_provider
+          replacement: monitoring-prometheus-it
+          action: replace
+        # Each probed target becomes its own series.
+        - sourceLabels: [__param_target]
+          targetLabel: instance
+          action: replace
+---
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringBinding
+metadata:
+  name: orders-prometheus-26264916
+status:
+  (conditions[?type == 'Configured']):
+    - status: "True"
+      reason: Configured
+      message: PodMonitors orders-prometheus-26264916-configserver, orders-prometheus-26264916-engine
+      observedGeneration: 1
