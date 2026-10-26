@@ -38,9 +38,9 @@ import (
 	"github.com/openeverest/openeverest/v2/provider-runtime/monitoring"
 )
 
-// ControllerName is matched against MonitoringClass.spec.controllerName and
-// is the field owner of everything this controller writes.
-const ControllerName = "openeverest.io/monitoring-prometheus"
+// FieldOwner is the server-side-apply field manager of everything this
+// controller writes.
+const FieldOwner = "openeverest.io/monitoring-prometheus"
 
 // applyRetryInterval paces retries while PodMonitors cannot be written, for
 // example until the Prometheus Operator CRDs are installed.
@@ -51,7 +51,7 @@ const applyRetryInterval = 30 * time.Second
 // PodMonitors of every binding. PodMonitors are only ever written, never
 // watched, so the manager starts without the Prometheus Operator CRDs.
 func Setup(mgr ctrl.Manager, className string) error {
-	cc := monitoring.ClassController{Client: mgr.GetClient(), ControllerName: ControllerName}
+	cc := monitoring.ClassController{Client: mgr.GetClient(), FieldOwner: FieldOwner, ClassName: className}
 
 	if err := ctrl.NewControllerManagedBy(mgr).
 		Named("monitoring-prometheus-class").
@@ -59,10 +59,10 @@ func Setup(mgr ctrl.Manager, className string) error {
 			predicate.GenerationChangedPredicate{},
 			predicate.NewPredicateFuncs(func(obj client.Object) bool {
 				class, ok := obj.(*monitoringv1alpha1.MonitoringClass)
-				return ok && class.Spec.ControllerName == ControllerName
+				return ok && cc.OwnsClass(class)
 			}),
 		)).
-		Complete(&classReconciler{client: mgr.GetClient(), cc: cc, className: className}); err != nil {
+		Complete(&classReconciler{client: mgr.GetClient(), cc: cc}); err != nil {
 		return fmt.Errorf("set up MonitoringClass controller: %w", err)
 	}
 
@@ -93,23 +93,16 @@ func Setup(mgr ctrl.Manager, className string) error {
 	return nil
 }
 
-// classReconciler claims the served class. Another class naming this
-// controller is left unclaimed, since nothing here renders its bindings.
+// classReconciler claims the served class and leaves any other unclaimed.
 type classReconciler struct {
-	client    client.Client
-	cc        monitoring.ClassController
-	className string
+	client client.Client
+	cc     monitoring.ClassController
 }
 
 func (r *classReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	class := &monitoringv1alpha1.MonitoringClass{}
 	if err := r.client.Get(ctx, req.NamespacedName, class); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
-	}
-	if class.Name != r.className {
-		ctrl.LoggerFrom(ctx).Info("Leaving a MonitoringClass naming this controller unclaimed; this release serves another class",
-			"class", class.Name, "served", r.className)
-		return ctrl.Result{}, nil
 	}
 	return ctrl.Result{}, r.cc.ClaimClass(ctx, class)
 }
@@ -127,9 +120,8 @@ func (r *destinationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err := r.client.Get(ctx, req.NamespacedName, dst); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	ours, err := r.cc.OwnsClass(ctx, dst.Spec.ClassRef.Name)
-	if err != nil || !ours {
-		return ctrl.Result{}, err
+	if dst.Spec.ClassRef.Name != r.cc.ClassName {
+		return ctrl.Result{}, nil
 	}
 	params, err := decodeParameters(dst.Spec.Parameters)
 	if err != nil {

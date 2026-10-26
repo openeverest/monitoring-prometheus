@@ -42,10 +42,10 @@ flowchart LR
     P -->|podMonitorSelector| R["Prometheus<br/>(Prometheus Operator)"]
 ```
 
-1. **Class.** The chart installs the cluster-scoped `prometheus` class
-   (`controllerName: openeverest.io/monitoring-prometheus`) and the controller claims it
-   (`Accepted=True`). The class requires metrics, so OpenEverest computes per provider whether
-   each component serves metrics natively or needs an exporter sidecar:
+1. **Class.** The chart installs the cluster-scoped `prometheus` class, and the controller
+   claims the MonitoringClass named by `class.name` (`--class-name`): `Accepted=True`. The
+   class requires metrics, so OpenEverest computes per provider whether each component serves
+   metrics natively or needs an exporter sidecar:
    `kubectl get mclass prometheus -o yaml` shows it under `status.providers`.
 2. **Destination.** A `MonitoringDestination` in the Instance's namespace references the class
    and says how the generated PodMonitors are labelled and how often they are scraped.

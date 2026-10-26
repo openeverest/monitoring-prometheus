@@ -47,13 +47,10 @@ func (r *bindingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if !b.DeletionTimestamp.IsZero() || !r.executes(b) {
 		return ctrl.Result{}, nil
 	}
-	ours, err := r.cc.OwnsClass(ctx, r.className)
-	if err != nil || !ours {
-		return ctrl.Result{}, err
-	}
 
 	var reason monitoringv1alpha1.ConfiguredReason
 	var message string
+	var err error
 	if monitoring.IsAccepted(b) {
 		reason, message, err = r.render(ctx, b)
 	} else {
@@ -120,7 +117,7 @@ func (r *bindingReconciler) applyPodMonitors(ctx context.Context, b *monitoringv
 		if err != nil {
 			return nil, err
 		}
-		if err := r.client.Apply(ctx, client.ApplyConfigurationFromUnstructured(u), client.FieldOwner(ControllerName), client.ForceOwnership); err != nil {
+		if err := r.client.Apply(ctx, client.ApplyConfigurationFromUnstructured(u), client.FieldOwner(FieldOwner), client.ForceOwnership); err != nil {
 			return nil, fmt.Errorf("apply PodMonitor %s: %w", pm.Name, err)
 		}
 		names = append(names, pm.Name)

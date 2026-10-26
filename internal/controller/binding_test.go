@@ -119,11 +119,10 @@ func newFakeClient(t *testing.T, funcs *interceptor.Funcs, objs ...client.Object
 	return b.Build()
 }
 
-func testClass(controllerName string) *monitoringv1alpha1.MonitoringClass {
+func testClass() *monitoringv1alpha1.MonitoringClass {
 	return &monitoringv1alpha1.MonitoringClass{
 		ObjectMeta: metav1.ObjectMeta{Name: "prometheus", Generation: 1},
 		Spec: monitoringv1alpha1.MonitoringClassSpec{
-			ControllerName:   controllerName,
 			ExtensionManaged: &monitoringv1alpha1.ExtensionManagedFulfilment{},
 		},
 	}
@@ -208,7 +207,7 @@ func podMonitorOwnedBy(name, binding string, uid types.UID) *unstructured.Unstru
 
 func reconcileBinding(t *testing.T, c client.Client) ctrl.Result {
 	t.Helper()
-	r := &bindingReconciler{client: c, cc: monitoring.ClassController{Client: c, ControllerName: ControllerName}, className: "prometheus"}
+	r := &bindingReconciler{client: c, cc: monitoring.ClassController{Client: c, FieldOwner: FieldOwner, ClassName: "prometheus"}, className: "prometheus"}
 	res, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKey{Namespace: testNamespace, Name: testBindingName}})
 	require.NoError(t, err)
 	return res
@@ -241,7 +240,7 @@ func livePodMonitors(t *testing.T, c client.Client) map[string]podMonitor {
 func TestReconcileAppliesPodMonitorsAndReportsConfigured(t *testing.T) {
 	t.Parallel()
 	c := newFakeClient(t, nil,
-		testClass(ControllerName),
+		testClass(),
 		testDestination(`{"podMonitorLabels":{"release":"kps"},"interval":"30s"}`),
 		testInstance(engineEndpoint(), proxyEndpoint()),
 		acceptedBinding(),
@@ -385,7 +384,7 @@ func TestReconcileReportsWhyNothingIsConfigured(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			objs := []client.Object{testClass(ControllerName), tt.binding, tt.instance}
+			objs := []client.Object{testClass(), tt.binding, tt.instance}
 			if tt.destination != nil {
 				objs = append(objs, tt.destination)
 			}
@@ -482,7 +481,7 @@ func TestReconcileKeepsLivePodMonitorsItCannotRender(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			objs := []client.Object{
-				testClass(ControllerName), tt.binding, tt.instance,
+				testClass(), tt.binding, tt.instance,
 				podMonitorOwnedBy(testBindingName+"-engine", testBindingName, testBindingUID),
 			}
 			if tt.destination != nil {
@@ -541,7 +540,7 @@ func TestReconcileWithoutThePodMonitorCRD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			c := newFakeClient(t, noPodMonitorCRD, testClass(ControllerName), testDestination(""), tt.instance, tt.binding)
+			c := newFakeClient(t, noPodMonitorCRD, testClass(), testDestination(""), tt.instance, tt.binding)
 
 			res := reconcileBinding(t, c)
 
@@ -562,46 +561,30 @@ func TestReconcileIgnoresBindingsItDoesNotServe(t *testing.T) {
 		b.Spec.ExecutionMode = mode
 		return b
 	}
-	secondClass := testClass(ControllerName)
-	secondClass.Name = "prometheus-b"
-	ofSecondClass := acceptedBinding()
-	ofSecondClass.Spec.ClassRef = &common.ObjectRef{Name: secondClass.Name}
+	ofOtherClass := acceptedBinding()
+	ofOtherClass.Spec.ClassRef = &common.ObjectRef{Name: "victoriametrics"}
 
 	tests := []struct {
 		name    string
 		binding *monitoringv1alpha1.MonitoringBinding
-		classes []client.Object
 	}{
-		{
-			name:    "class of another controller",
-			binding: acceptedBinding(),
-			classes: []client.Object{testClass("openeverest.io/monitoring-victoriametrics")},
-		},
-		{
-			name:    "class not installed",
-			binding: acceptedBinding(),
-		},
 		{
 			name:    "ProviderManaged binding of the class",
 			binding: withMode(corev1alpha1.MonitoringExecutionModeProviderManaged),
-			classes: []client.Object{testClass(ControllerName)},
 		},
 		{
 			name:    "binding whose mode core has not resolved",
 			binding: withMode(""),
-			classes: []client.Object{testClass(ControllerName)},
 		},
 		{
-			name:    "binding of a second class naming this controller",
-			binding: ofSecondClass,
-			classes: []client.Object{testClass(ControllerName), secondClass},
+			name:    "binding of another class",
+			binding: ofOtherClass,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			objs := append([]client.Object{testDestination(""), testInstance(engineEndpoint()), tt.binding}, tt.classes...)
-			c := newFakeClient(t, nil, objs...)
+			c := newFakeClient(t, nil, testClass(), testDestination(""), testInstance(engineEndpoint()), tt.binding)
 
 			res := reconcileBinding(t, c)
 
@@ -616,7 +599,7 @@ func TestReconcilePrunesPodMonitorsOfComponentsNoLongerPublished(t *testing.T) {
 	t.Parallel()
 	foreign := podMonitorOwnedBy("orders-prometheus-0000000-proxy", "orders-prometheus-0000000", "other")
 	c := newFakeClient(t, nil,
-		testClass(ControllerName),
+		testClass(),
 		testDestination(""),
 		testInstance(engineEndpoint(), proxyEndpoint()),
 		acceptedBinding(),

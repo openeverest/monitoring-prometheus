@@ -36,38 +36,30 @@ func TestClassReconcilerClaimsOurClass(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name            string
-		className       string
-		classController string
-		want            *metav1.Condition
+		name      string
+		className string
+		want      *metav1.Condition
 	}{
 		{
-			name:            "the served class",
-			className:       "prometheus",
-			classController: ControllerName,
+			name:      "the served class",
+			className: "prometheus",
 			want: &metav1.Condition{
-				Status: metav1.ConditionTrue, Reason: monitoringv1alpha1.ReasonAccepted, Message: "claimed by " + ControllerName, ObservedGeneration: 1,
+				Status: metav1.ConditionTrue, Reason: monitoringv1alpha1.ReasonAccepted, Message: "claimed by " + FieldOwner, ObservedGeneration: 1,
 			},
 		},
 		{
-			name:            "a second class naming this controller",
-			className:       "prometheus-b",
-			classController: ControllerName,
-		},
-		{
-			name:            "class of another controller",
-			className:       "prometheus",
-			classController: "openeverest.io/monitoring-victoriametrics",
+			name:      "another class",
+			className: "prometheus-b",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			ctx := t.Context()
-			class := testClass(tt.classController)
+			class := testClass()
 			class.Name = tt.className
 			c := newFakeClient(t, nil, class)
-			r := &classReconciler{client: c, cc: monitoring.ClassController{Client: c, ControllerName: ControllerName}, className: "prometheus"}
+			r := &classReconciler{client: c, cc: monitoring.ClassController{Client: c, FieldOwner: FieldOwner, ClassName: "prometheus"}}
 
 			_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKey{Name: tt.className}})
 			require.NoError(t, err)
@@ -92,43 +84,45 @@ func TestDestinationReconcilerReportsReady(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name            string
-		classController string
-		parameters      string
-		want            *metav1.Condition
+		name       string
+		className  string
+		parameters string
+		want       *metav1.Condition
 	}{
 		{
-			name:            "labels to be selected by",
-			classController: ControllerName,
-			parameters:      `{"podMonitorLabels":{"release":"kps","team":"dba"}}`,
-			want:            &metav1.Condition{Status: metav1.ConditionTrue, Reason: string(monitoringv1alpha1.ReasonReady), Message: "PodMonitors are labelled release=kps,team=dba"},
+			name:       "labels to be selected by",
+			className:  "prometheus",
+			parameters: `{"podMonitorLabels":{"release":"kps","team":"dba"}}`,
+			want:       &metav1.Condition{Status: metav1.ConditionTrue, Reason: string(monitoringv1alpha1.ReasonReady), Message: "PodMonitors are labelled release=kps,team=dba"},
 		},
 		{
-			name:            "no parameters",
-			classController: ControllerName,
-			want:            &metav1.Condition{Status: metav1.ConditionTrue, Reason: string(monitoringv1alpha1.ReasonReady), Message: "PodMonitors are labelled {}"},
+			name:      "no parameters",
+			className: "prometheus",
+			want:      &metav1.Condition{Status: metav1.ConditionTrue, Reason: string(monitoringv1alpha1.ReasonReady), Message: "PodMonitors are labelled {}"},
 		},
 		{
-			name:            "parameters that cannot be rendered",
-			classController: ControllerName,
-			parameters:      `{"interval":"often"}`,
+			name:       "parameters that cannot be rendered",
+			className:  "prometheus",
+			parameters: `{"interval":"often"}`,
 			want: &metav1.Condition{
 				Status: metav1.ConditionFalse, Reason: string(monitoringv1alpha1.ReasonReadyInvalidParameters),
 				Message: `interval "often" is not a Prometheus duration such as 30s or 1m`,
 			},
 		},
 		{
-			name:            "class of another controller",
-			classController: "openeverest.io/monitoring-victoriametrics",
-			parameters:      `{"podMonitorLabels":{"release":"kps"}}`,
+			name:       "destination of another class",
+			className:  "victoriametrics",
+			parameters: `{"podMonitorLabels":{"release":"kps"}}`,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			ctx := t.Context()
-			c := newFakeClient(t, nil, testClass(tt.classController), testDestination(tt.parameters))
-			r := &destinationReconciler{client: c, cc: monitoring.ClassController{Client: c, ControllerName: ControllerName}}
+			destination := testDestination(tt.parameters)
+			destination.Spec.ClassRef.Name = tt.className
+			c := newFakeClient(t, nil, testClass(), destination)
+			r := &destinationReconciler{client: c, cc: monitoring.ClassController{Client: c, FieldOwner: FieldOwner, ClassName: "prometheus"}}
 
 			_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKey{Namespace: testNamespace, Name: "prom"}})
 			require.NoError(t, err)

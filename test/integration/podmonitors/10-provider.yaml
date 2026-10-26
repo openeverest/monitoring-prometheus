@@ -10,7 +10,6 @@ spec:
       mongod:
         kind: mongodb
         metrics: Exporter
-        credentialProfiles: [metrics]
       cfg:
         kind: mongodb
         metrics: Exporter

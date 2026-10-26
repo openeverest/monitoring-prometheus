@@ -4,7 +4,6 @@ kind: MonitoringClass
 metadata:
   name: prometheus
 spec:
-  controllerName: openeverest.io/monitoring-prometheus
   extensionManaged:
     requires:
       metrics: true
