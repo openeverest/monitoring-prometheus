@@ -1,0 +1,19 @@
+apiVersion: v2
+name: monitoring-prometheus
+description: OpenEverest monitoring extension for Prometheus (Prometheus Operator). Ships the MonitoringClass and its controller.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - openeverest
+  - monitoring
+  - extension
+  - prometheus
+home: https://github.com/openeverest/monitoring-prometheus
+sources:
+  - https://github.com/openeverest/monitoring-prometheus
+maintainers:
+  - name: OpenEverest Contributors
+annotations:
+  openeverest.io/extension-type: monitoring
+# OpenEverest (controller + CRDs) must be installed before this chart.

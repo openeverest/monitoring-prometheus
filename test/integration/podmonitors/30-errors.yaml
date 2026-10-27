@@ -1,0 +1,5 @@
+# A component the Instance stops publishing loses its PodMonitor.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: orders-prometheus-26264916-configserver

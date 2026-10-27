@@ -1,0 +1,9 @@
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringDestination
+metadata:
+  name: prom
+status:
+  (conditions[?type == 'Ready']):
+    - status: "True"
+      reason: Ready
+      message: PodMonitors are labelled release=kube-prometheus-stack

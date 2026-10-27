@@ -1,0 +1,30 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: orders
+spec:
+  providerRef:
+    name: monitoring-prometheus-it
+  components:
+    engine:
+      type: mongod
+    configServer:
+      type: cfg
+    proxy:
+      type: mongos
+  monitoring:
+    destinations:
+      - name: prometheus
+        destinationRef:
+          name: prom
+---
+# The credentials the Instance publishes for the "metrics" profile; the
+# PodMonitor references it, Prometheus reads it.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: orders-monitoring-metrics
+type: Opaque
+stringData:
+  username: monitor
+  password: not-a-real-password

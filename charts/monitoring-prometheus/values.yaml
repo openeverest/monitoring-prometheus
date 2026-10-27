@@ -1,0 +1,83 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/openeverest/monitoring-prometheus
+  pullPolicy: IfNotPresent
+  # Defaults to the chart appVersion.
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  automountServiceAccountToken: true
+  name: ""
+
+rbac:
+  create: true
+
+# The MonitoringClass this extension claims. The class is cluster-scoped and
+# installed by this chart; destinations reference it by name.
+class:
+  create: true
+  name: prometheus
+  displayName: Prometheus (Prometheus Operator)
+
+podAnnotations: {}
+podLabels: {}
+
+# Pod Security Standards "restricted"; 65532 is the nonroot user of the
+# distroless image.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 128Mi
+  requests:
+    cpu: 20m
+    memory: 64Mi
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: probes
+  initialDelaySeconds: 15
+  periodSeconds: 20
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: probes
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+leaderElection:
+  enabled: true
+
+logLevel: info
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+extraEnv: []

@@ -1,0 +1,11 @@
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringDestination
+metadata:
+  name: prom
+spec:
+  classRef:
+    name: prometheus
+  parameters:
+    podMonitorLabels:
+      release: kube-prometheus-stack
+    interval: 30s
