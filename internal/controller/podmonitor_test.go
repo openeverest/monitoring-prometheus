@@ -166,23 +166,33 @@ func TestPodMetricsEndpointFor(t *testing.T) {
 			},
 		},
 		{
-			name: "tls with CA, server name and verification switched off",
+			name: "tls with CA and server name",
 			endpoint: corev1alpha1.MetricsEndpoint{
 				Port:   intstr.FromString("metrics"),
 				Scheme: "https",
 				TLS: &corev1alpha1.MetricsEndpointTLS{
-					CA:                 &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "orders-ca"}, Key: "ca.crt"},
-					ServerName:         "orders-pxc",
-					InsecureSkipVerify: true,
+					TLSConfig:  common.TLSConfig{CA: &common.CABundleSource{SecretKeyRef: &common.SecretKeyRef{Name: "orders-ca", Key: "ca.crt"}}},
+					ServerName: "orders-pxc",
 				},
 			},
 			want: podMetricsEndpoint{
 				Port: "metrics", Path: "/metrics", Scheme: "https",
 				TLSConfig: &tlsConfig{
-					CA:                 &secretOrConfigMap{Secret: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "orders-ca"}, Key: "ca.crt"}},
-					ServerName:         "orders-pxc",
-					InsecureSkipVerify: true,
+					CA:         &secretOrConfigMap{Secret: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "orders-ca"}, Key: "ca.crt"}},
+					ServerName: "orders-pxc",
 				},
+			},
+		},
+		{
+			name: "tls without verification",
+			endpoint: corev1alpha1.MetricsEndpoint{
+				Port:   intstr.FromString("metrics"),
+				Scheme: "https",
+				TLS:    &corev1alpha1.MetricsEndpointTLS{TLSConfig: common.TLSConfig{InsecureSkipVerify: true}},
+			},
+			want: podMetricsEndpoint{
+				Port: "metrics", Path: "/metrics", Scheme: "https",
+				TLSConfig: &tlsConfig{InsecureSkipVerify: true},
 			},
 		},
 		{

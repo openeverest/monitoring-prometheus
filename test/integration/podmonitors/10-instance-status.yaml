@@ -43,6 +43,7 @@ status:
           scheme: https
           tls:
             ca:
-              name: orders-ca
-              key: ca.crt
+              secretKeyRef:
+                name: orders-ca
+                key: ca.crt
             serverName: orders-mongos
