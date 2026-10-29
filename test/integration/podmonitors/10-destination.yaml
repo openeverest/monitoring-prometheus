@@ -5,8 +5,6 @@ metadata:
 spec:
   classRef:
     name: prometheus
-  authentication:
-    mode: Anonymous
   parameters:
     podMonitorLabels:
       release: kube-prometheus-stack

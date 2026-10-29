@@ -161,8 +161,6 @@ metadata:
 spec:
   classRef:
     name: prometheus
-  authentication:
-    mode: Anonymous
   parameters:
     podMonitorLabels:
       release: kube-prometheus-stack
@@ -176,8 +174,9 @@ spec:
 
 Neither parameter is required, but without `podMonitorLabels` most Prometheus setups select
 none of the PodMonitors. Any other parameter is rejected: OpenEverest reports the destination
-`Accepted=False` with reason `InvalidParameters`. The destination authenticates with the
-class's only mode, `Anonymous`, and needs no credentials: Prometheus scrapes the pods directly.
+`Accepted=False` with reason `InvalidParameters`. The destination needs no
+`authentication`: it defaults to the class's only mode, `Anonymous`, because Prometheus scrapes
+the pods directly.
 
 ```bash
 kubectl get mdest prometheus
