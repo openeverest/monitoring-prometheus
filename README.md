@@ -71,9 +71,11 @@ as their `instance` label, so each probed target is its own series.
 
 Credentials are passed by reference only. An endpoint that needs authentication gets
 `basicAuth` pointing at the `username` and `password` keys of the Secret the Instance publishes
-for that credential profile, and a TLS CA becomes `tlsConfig.ca.secret`. The controller never
-reads those Secrets; the Prometheus Operator resolves them when it builds the Prometheus
-configuration.
+for that credential profile, a TLS CA becomes `tlsConfig.ca.secret`, and the client
+certificate of an endpoint that requires mutual TLS becomes `tlsConfig.cert.secret` and
+`tlsConfig.keySecret` (the `tls.crt` and `tls.key` keys of its `kubernetes.io/tls` Secret).
+The controller never reads those Secrets; the Prometheus Operator resolves them when it builds
+the Prometheus configuration.
 
 ## Prerequisites
 
