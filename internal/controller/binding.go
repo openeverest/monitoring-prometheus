@@ -27,16 +27,14 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	monitoringv1alpha1 "github.com/openeverest/openeverest/v2/api/monitoring/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/monitoring"
 )
 
 // bindingReconciler turns one binding into PodMonitors.
 type bindingReconciler struct {
-	client    client.Client
-	cc        monitoring.ClassController
-	className string
+	client client.Client
+	cc     monitoring.ClassController
 }
 
 func (r *bindingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -44,8 +42,11 @@ func (r *bindingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err := r.client.Get(ctx, req.NamespacedName, b); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	if !b.DeletionTimestamp.IsZero() || !r.executes(b) {
+	if !b.DeletionTimestamp.IsZero() {
 		return ctrl.Result{}, nil
+	}
+	if executes, err := r.executes(ctx, b); err != nil || !executes {
+		return ctrl.Result{}, err
 	}
 
 	var reason monitoringv1alpha1.ConfiguredReason
@@ -67,10 +68,14 @@ func (r *bindingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 
 // executes reports whether this controller is the Configured writer of the
-// binding: an ExtensionManaged binding of the served class.
-func (r *bindingReconciler) executes(b *monitoringv1alpha1.MonitoringBinding) bool {
-	return b.Spec.ExecutionMode == corev1alpha1.MonitoringExecutionModeExtensionManaged &&
-		b.Spec.ClassRef != nil && b.Spec.ClassRef.Name == r.className
+// binding: an ExtensionManaged binding of a class it claims.
+func (r *bindingReconciler) executes(ctx context.Context, b *monitoringv1alpha1.MonitoringBinding) (bool, error) {
+	return r.cc.OwnsBinding(ctx, b)
+}
+
+// bindingClass is the name of the binding's class.
+func bindingClass(b *monitoringv1alpha1.MonitoringBinding) string {
+	return b.Labels[monitoringv1alpha1.BindingClassLabel]
 }
 
 // render brings the binding's PodMonitors in line with the Instance's
@@ -93,7 +98,7 @@ func (r *bindingReconciler) render(ctx context.Context, b *monitoringv1alpha1.Mo
 	if sources == nil {
 		return monitoringv1alpha1.ReasonEndpointNotServing, fmt.Sprintf("Instance %s has not published monitoring sources yet", in.Name), nil
 	}
-	podMonitors, err := podMonitorsFor(b, r.className, sources, params)
+	podMonitors, err := podMonitorsFor(b, bindingClass(b), sources, params)
 	if err != nil {
 		return monitoringv1alpha1.ReasonRenderFailed, fmt.Sprintf("Instance %s: %v", in.Name, err), nil
 	}
@@ -164,7 +169,7 @@ func (r *bindingReconciler) ownedPodMonitors(ctx context.Context, b *monitoringv
 	list.SetKind(podMonitorKind + "List")
 	err := r.client.List(ctx, list, client.InNamespace(b.Namespace), client.MatchingLabels{
 		monitoringv1alpha1.BindingInstanceLabel: b.Spec.InstanceRef.Name,
-		monitoringv1alpha1.BindingClassLabel:    r.className,
+		monitoringv1alpha1.BindingClassLabel:    bindingClass(b),
 	})
 	if meta.IsNoMatchError(err) {
 		return nil, nil

@@ -5,14 +5,18 @@ kind: Provider
 metadata:
   name: monitoring-prometheus-it
 spec:
+  componentTypes:
+    mongod:
+      kind: mongodb
+    cfg:
+      kind: mongodb
+    mongos:
+      kind: mongodb
   monitoring:
     componentTypes:
       mongod:
-        kind: mongodb
         metrics: Exporter
       cfg:
-        kind: mongodb
         metrics: Exporter
       mongos:
-        kind: mongodb
         metrics: Exporter

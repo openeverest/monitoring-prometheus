@@ -20,6 +20,7 @@ package main
 import (
 	"flag"
 	"os"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -36,12 +37,13 @@ import (
 )
 
 func main() {
-	var metricsAddr, probeAddr, className string
+	var metricsAddr, probeAddr, controllerName string
 	var leaderElect bool
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "Metrics endpoint bind address ('0' disables it).")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "Health probe endpoint bind address.")
-	flag.BoolVar(&leaderElect, "leader-elect", false, "Enable leader election; the lease is named after the controller and the served class.")
-	flag.StringVar(&className, "class-name", "prometheus", "Name of the MonitoringClass whose bindings this controller serves.")
+	flag.BoolVar(&leaderElect, "leader-elect", false, "Enable leader election; the lease is named after the controller name.")
+	flag.StringVar(&controllerName, "controller-name", "openeverest.io/monitoring-prometheus",
+		"Controller name this controller claims MonitoringClasses by: it serves every class whose spec.controllerName equals it.")
 	opts := zap.Options{Development: false}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -57,7 +59,7 @@ func main() {
 		Metrics:                metricsserver.Options{BindAddress: metricsAddr},
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         leaderElect,
-		LeaderElectionID:       className + ".monitoring-prometheus.openeverest.io",
+		LeaderElectionID:       leaseName(controllerName),
 	})
 	if err != nil {
 		ctrl.Log.Error(err, "unable to start manager")
@@ -71,7 +73,7 @@ func main() {
 		ctrl.Log.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}
-	if err := controller.Setup(mgr, className); err != nil {
+	if err := controller.Setup(mgr, controllerName); err != nil {
 		ctrl.Log.Error(err, "unable to set up controller")
 		os.Exit(1)
 	}
@@ -79,4 +81,10 @@ func main() {
 		ctrl.Log.Error(err, "manager exited")
 		os.Exit(1)
 	}
+}
+
+// leaseName is the leader election lease of the controller named
+// controllerName, a DNS subdomain: "/" and "_" are not allowed in one.
+func leaseName(controllerName string) string {
+	return strings.NewReplacer("/", "-", "_", "-").Replace(controllerName) + ".monitoring-prometheus.openeverest.io"
 }
