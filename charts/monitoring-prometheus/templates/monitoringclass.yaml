@@ -6,6 +6,7 @@ metadata:
   labels:
     {{- include "monitoring-prometheus.labels" . | nindent 4 }}
 spec:
+  controllerName: {{ .Values.class.controllerName }}
   displayName: {{ .Values.class.displayName }}
   description: Creates one Prometheus Operator PodMonitor per component of every Instance sending metrics to a destination of this class.
   extensionManaged:

@@ -42,10 +42,11 @@ flowchart LR
     P -->|podMonitorSelector| R["Prometheus<br/>(Prometheus Operator)"]
 ```
 
-1. **Class.** The chart installs the cluster-scoped `prometheus` class, and the controller
-   claims the MonitoringClass named by `class.name` (`--class-name`): `Accepted=True`. The
-   class requires metrics, so OpenEverest computes per provider whether each component serves
-   metrics natively or needs an exporter sidecar:
+1. **Class.** The chart installs the cluster-scoped `prometheus` class with
+   `controllerName: openeverest.io/monitoring-prometheus`, and the controller claims every
+   MonitoringClass whose `controllerName` is its `--controller-name` (`class.controllerName`):
+   `Accepted=True`. The class requires metrics, so OpenEverest computes per provider whether
+   each component serves metrics natively or needs an exporter sidecar:
    `kubectl get mclass prometheus -o yaml` shows it under `status.providers`.
 2. **Destination.** A `MonitoringDestination` in the Instance's namespace references the class
    and says how the generated PodMonitors are labelled and how often they are scraped.
@@ -117,7 +118,8 @@ Instance entries are removed.
 | Chart value | Default | Purpose |
 |---|---|---|
 | `class.create` | `true` | Install the `MonitoringClass` |
-| `class.name` | `prometheus` | Name of the class; the controller claims and serves only this class |
+| `class.name` | `prometheus` | Name of the class that destinations reference |
+| `class.controllerName` | `openeverest.io/monitoring-prometheus` | `controllerName` of the class and the controller's `--controller-name`; the controller claims and serves every class that names it |
 | `class.displayName` | `Prometheus (Prometheus Operator)` | Name shown in the UI |
 | `image.repository` | `ghcr.io/openeverest/monitoring-prometheus` | Controller image |
 | `image.tag` | chart `appVersion` | Controller image tag |

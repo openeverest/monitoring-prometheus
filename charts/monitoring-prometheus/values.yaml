@@ -19,11 +19,13 @@ serviceAccount:
 rbac:
   create: true
 
-# The MonitoringClass this extension claims. The class is cluster-scoped and
-# installed by this chart; destinations reference it by name.
+# The MonitoringClass this chart installs. The class is cluster-scoped;
+# destinations reference it by name. The controller claims every class whose
+# controllerName is class.controllerName (--controller-name).
 class:
   create: true
   name: prometheus
+  controllerName: openeverest.io/monitoring-prometheus
   displayName: Prometheus (Prometheus Operator)
 
 podAnnotations: {}

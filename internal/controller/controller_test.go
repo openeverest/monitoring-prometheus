@@ -36,20 +36,31 @@ func TestClassReconcilerClaimsOurClass(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		className string
-		want      *metav1.Condition
+		name           string
+		className      string
+		controllerName string
+		want           *metav1.Condition
 	}{
 		{
-			name:      "the served class",
-			className: "prometheus",
+			name:           "the served class",
+			className:      "prometheus",
+			controllerName: testControllerName,
 			want: &metav1.Condition{
-				Status: metav1.ConditionTrue, Reason: monitoringv1alpha1.ReasonAccepted, Message: "claimed by " + FieldOwner, ObservedGeneration: 1,
+				Status: metav1.ConditionTrue, Reason: monitoringv1alpha1.ReasonAccepted, Message: "claimed by " + testControllerName, ObservedGeneration: 1,
 			},
 		},
 		{
-			name:      "another class",
-			className: "prometheus-b",
+			name:           "a second class naming this controller",
+			className:      "prometheus-b",
+			controllerName: testControllerName,
+			want: &metav1.Condition{
+				Status: metav1.ConditionTrue, Reason: monitoringv1alpha1.ReasonAccepted, Message: "claimed by " + testControllerName, ObservedGeneration: 1,
+			},
+		},
+		{
+			name:           "a class of another controller",
+			className:      "prometheus",
+			controllerName: "example.com/prometheus",
 		},
 	}
 	for _, tt := range tests {
@@ -58,8 +69,9 @@ func TestClassReconcilerClaimsOurClass(t *testing.T) {
 			ctx := t.Context()
 			class := testClass()
 			class.Name = tt.className
+			class.Spec.ControllerName = tt.controllerName
 			c := newFakeClient(t, nil, class)
-			r := &classReconciler{client: c, cc: monitoring.ClassController{Client: c, FieldOwner: FieldOwner, ClassName: "prometheus"}}
+			r := &classReconciler{client: c, cc: testController(c)}
 
 			_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKey{Name: tt.className}})
 			require.NoError(t, err)
@@ -110,7 +122,12 @@ func TestDestinationReconcilerReportsReady(t *testing.T) {
 			},
 		},
 		{
-			name:       "destination of another class",
+			name:       "destination of a class of another controller",
+			className:  "prometheus-other",
+			parameters: `{"podMonitorLabels":{"release":"kps"}}`,
+		},
+		{
+			name:       "destination of a class that does not exist",
 			className:  "victoriametrics",
 			parameters: `{"podMonitorLabels":{"release":"kps"}}`,
 		},
@@ -121,8 +138,8 @@ func TestDestinationReconcilerReportsReady(t *testing.T) {
 			ctx := t.Context()
 			destination := testDestination(tt.parameters)
 			destination.Spec.ClassRef.Name = tt.className
-			c := newFakeClient(t, nil, testClass(), destination)
-			r := &destinationReconciler{client: c, cc: monitoring.ClassController{Client: c, FieldOwner: FieldOwner, ClassName: "prometheus"}}
+			c := newFakeClient(t, nil, testClass(), otherControllerClass(), destination)
+			r := &destinationReconciler{client: c, cc: testController(c)}
 
 			_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKey{Namespace: testNamespace, Name: "prom"}})
 			require.NoError(t, err)
@@ -205,6 +222,7 @@ func TestBindingWatchesEnqueueOnlyServedBindings(t *testing.T) {
 		return b
 	}
 	c := newFakeClient(t, nil,
+		testClass(),
 		binding("served", func(*monitoringv1alpha1.MonitoringBinding) {}),
 		binding("provider-managed", func(b *monitoringv1alpha1.MonitoringBinding) {
 			b.Spec.ExecutionMode = corev1alpha1.MonitoringExecutionModeProviderManaged
@@ -220,7 +238,7 @@ func TestBindingWatchesEnqueueOnlyServedBindings(t *testing.T) {
 			b.Labels[monitoringv1alpha1.BindingDestinationLabel] = "other"
 		}),
 	)
-	r := &bindingReconciler{client: c, className: "prometheus"}
+	r := &bindingReconciler{client: c, cc: testController(c)}
 	names := func(reqs []reconcile.Request) []string {
 		out := make([]string, 0, len(reqs))
 		for _, req := range reqs {
@@ -231,4 +249,31 @@ func TestBindingWatchesEnqueueOnlyServedBindings(t *testing.T) {
 
 	assert.ElementsMatch(t, []string{"served", "other-destination"}, names(r.bindingsForInstance(t.Context(), in)))
 	assert.ElementsMatch(t, []string{"served", "not-controlled"}, names(r.bindingsForDestination(t.Context(), testDestination(""))))
+}
+
+func TestDestinationWatchEnqueuesDestinationsOfServedClasses(t *testing.T) {
+	t.Parallel()
+	destination := func(name, class string) client.Object {
+		dst := testDestination("")
+		dst.Name = name
+		dst.Spec.ClassRef.Name = class
+		return dst
+	}
+	c := newFakeClient(t, nil,
+		testClass(), otherControllerClass(),
+		destination("prom", "prometheus"),
+		destination("prom-2", "prometheus"),
+		destination("other", "prometheus-other"),
+	)
+	r := &destinationReconciler{client: c, cc: testController(c)}
+	names := func(reqs []reconcile.Request) []string {
+		out := make([]string, 0, len(reqs))
+		for _, req := range reqs {
+			out = append(out, req.Name)
+		}
+		return out
+	}
+
+	assert.ElementsMatch(t, []string{"prom", "prom-2"}, names(r.destinationsOfClass(t.Context(), testClass())))
+	assert.Empty(t, r.destinationsOfClass(t.Context(), otherControllerClass()))
 }
