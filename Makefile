@@ -12,7 +12,7 @@ _IMG_REPO = $(firstword $(subst :, ,$(IMG)))
 _IMG_TAG  = $(lastword $(subst :, ,$(IMG)))
 
 CHART_DIR ?= charts/monitoring-prometheus
-RELEASE_NAMESPACE ?= openeverest-system
+RELEASE_NAMESPACE ?= everest-system
 
 GOLANGCI_LINT_VERSION ?= v2.14.0
 

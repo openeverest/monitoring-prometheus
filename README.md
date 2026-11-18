@@ -95,7 +95,7 @@ The chart is published as an OCI artifact to GitHub Container Registry:
 ```bash
 helm install monitoring-prometheus \
   oci://ghcr.io/openeverest/charts/monitoring-prometheus \
-  -n openeverest-system
+  -n everest-system
 ```
 
 Check that the class is claimed:
@@ -108,8 +108,8 @@ Upgrade and uninstall:
 
 ```bash
 helm upgrade monitoring-prometheus \
-  oci://ghcr.io/openeverest/charts/monitoring-prometheus -n openeverest-system
-helm uninstall monitoring-prometheus -n openeverest-system
+  oci://ghcr.io/openeverest/charts/monitoring-prometheus -n everest-system
+helm uninstall monitoring-prometheus -n everest-system
 ```
 
 Uninstalling removes the class and the controller. Existing `PodMonitor`s stay until their
@@ -240,7 +240,7 @@ namespace, and the Prometheus Operator logs for rejected PodMonitors.
 Controller logs:
 
 ```bash
-kubectl logs -n openeverest-system deploy/monitoring-prometheus -f
+kubectl logs -n everest-system deploy/monitoring-prometheus -f
 ```
 
 ## Development
