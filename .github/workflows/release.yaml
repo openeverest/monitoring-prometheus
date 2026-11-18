@@ -96,7 +96,7 @@ jobs:
           \`\`\`bash
           helm install monitoring-prometheus \\
             oci://${REGISTRY}/${{ github.repository_owner }}/charts/monitoring-prometheus \\
-            --version ${VERSION} -n openeverest-system
+            --version ${VERSION} -n everest-system
           \`\`\`
           EOF
 
