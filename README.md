@@ -31,6 +31,10 @@ component, which the Prometheus you already run picks up through its `podMonitor
 |---|---|---|
 | `0.1.x` | `2.0.0-dev.5` | `v0.79` or later |
 
+The chart and its `MonitoringClass` carry the annotation `openeverest.io/contract-version`, the
+contract version of the OpenEverest the controller is built against. It names the oldest
+OpenEverest the build works with.
+
 ## How it fits
 
 ```mermaid
@@ -125,6 +129,7 @@ Instance entries are removed.
 | `image.tag` | chart `appVersion` | Controller image tag |
 | `leaderElection.enabled` | `true` | Required for `replicaCount` above 1 |
 | `logLevel` | `info` | `debug`, `info` or `error` |
+| `compatibility.acknowledge.coreVersion` | `""` | OpenEverest release on which to run this build although it does not support it, such as `2.0.0` |
 
 All values are in [values.yaml](charts/monitoring-prometheus/values.yaml).
 
@@ -255,6 +260,8 @@ Requires Go (see [go.mod](go.mod)), Docker, Helm, kubectl, and for the integrati
 | `make build` | Controller binary in `bin/` |
 | `make docker-build IMG=...` | Controller image |
 | `make helm-lint` | Lint the chart |
+| `make generate` | Stamp the chart with the OpenEverest contract version of the core in `go.mod` |
+| `make verify` | Fail when `make generate` changes anything or the `MonitoringClass` does not carry the stamp |
 | `make run` | Run the controller against the current kubeconfig |
 
 The integration tests run the chart in a k3d cluster that holds only the OpenEverest and
