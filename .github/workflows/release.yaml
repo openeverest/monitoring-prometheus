@@ -74,7 +74,7 @@ jobs:
         run: go tool classgen verify --chart-dir "$CHART_DIR" --release
 
       - name: Install Helm
-        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
 
       - name: Stamp chart version and image
         run: make -C "$CHART_DIR" release VERSION="$VERSION" IMAGE_PREFIX="$REGISTRY/${{ github.repository_owner }}"
