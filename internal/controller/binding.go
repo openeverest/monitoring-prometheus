@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	monitoringv1alpha1 "github.com/openeverest/openeverest/v2/api/monitoring/v1alpha1"
+	contractmonitoring "github.com/openeverest/openeverest/v2/contract/monitoring"
 	"github.com/openeverest/openeverest/v2/provider-runtime/monitoring"
 )
 
@@ -52,7 +53,7 @@ func (r *bindingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	var reason monitoringv1alpha1.ConfiguredReason
 	var message string
 	var err error
-	if monitoring.IsAccepted(b) {
+	if contractmonitoring.IsAccepted(b) {
 		reason, message, err = r.render(ctx, b)
 	} else {
 		reason, message, err = r.notAcceptedReason(ctx, b)
