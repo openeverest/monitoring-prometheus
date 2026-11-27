@@ -37,12 +37,11 @@ compatibility:
 podAnnotations: {}
 podLabels: {}
 
-# Pod Security Standards "restricted"; 65532 is the nonroot user of the
-# distroless image.
+# Pod Security Standards "restricted". No fixed runAsUser/runAsGroup: the image
+# declares USER 65532:65532, and OpenShift's restricted-v2 SCC assigns IDs from
+# the namespace range and rejects fixed ones outside it.
 podSecurityContext:
   runAsNonRoot: true
-  runAsUser: 65532
-  runAsGroup: 65532
   seccompProfile:
     type: RuntimeDefault
 
@@ -53,8 +52,6 @@ securityContext:
       - ALL
   readOnlyRootFilesystem: true
   runAsNonRoot: true
-  runAsUser: 65532
-  runAsGroup: 65532
   seccompProfile:
     type: RuntimeDefault
 
